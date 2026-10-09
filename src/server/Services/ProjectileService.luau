@@ -32,6 +32,73 @@ function ProjectileService.Init(services)
 	folder.Parent = workspace
 end
 
+-- Visual dressing per projectile kind (replicates to every client).
+-- spec.Vfx: "Fire" | "Magic" | "Holy" | "Poison" | "Arrow" | "Physical"
+local VFX_COLORS = {
+	Fire = { Color3.fromRGB(255, 190, 80), Color3.fromRGB(255, 70, 20) },
+	Magic = { Color3.fromRGB(170, 190, 255), Color3.fromRGB(90, 90, 255) },
+	Holy = { Color3.fromRGB(255, 245, 190), Color3.fromRGB(255, 200, 90) },
+	Poison = { Color3.fromRGB(180, 255, 90), Color3.fromRGB(70, 150, 30) },
+	Arrow = { Color3.fromRGB(235, 230, 215), Color3.fromRGB(150, 140, 120) },
+	Physical = { Color3.fromRGB(235, 230, 215), Color3.fromRGB(150, 140, 120) },
+}
+ProjectileService.Colors = VFX_COLORS
+
+function ProjectileService.Decorate(p: Part, spec)
+	local kind = spec.Vfx or "Physical"
+	local cols = VFX_COLORS[kind] or VFX_COLORS.Physical
+	if kind == "Arrow" then
+		p.Shape = Enum.PartType.Block
+		p.Material = Enum.Material.Wood
+		p.Color = Color3.fromRGB(110, 85, 60)
+		p.Size = Vector3.new(0.18, 0.18, 2.6)
+	else
+		p.Color = cols[1]
+	end
+	local light = Instance.new("PointLight")
+	light.Color = cols[2]
+	light.Range = if kind == "Arrow" then 0 else 12
+	light.Brightness = 2
+	light.Parent = p
+	-- ribbon trail
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, p.Size.Y * 0.35, 0)
+	a0.Parent = p
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -p.Size.Y * 0.35, 0)
+	a1.Parent = p
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Lifetime = if kind == "Arrow" then 0.15 else 0.3
+	trail.LightEmission = if kind == "Arrow" then 0 else 1
+	trail.Color = ColorSequence.new(cols[1], cols[2])
+	trail.Transparency = NumberSequence.new(0.2, 1)
+	trail.WidthScale = NumberSequence.new(1, 0)
+	trail.FaceCamera = true
+	trail.Parent = p
+	if kind == "Fire" then
+		local fire = Instance.new("Fire")
+		fire.Size = math.max(2, p.Size.X * 2)
+		fire.Heat = 0
+		fire.Color = cols[1]
+		fire.SecondaryColor = cols[2]
+		fire.Parent = p
+	end
+	if kind ~= "Arrow" and kind ~= "Physical" then
+		local e = Instance.new("ParticleEmitter")
+		e.Color = ColorSequence.new(cols[1], cols[2])
+		e.LightEmission = 1
+		e.Rate = 40
+		e.Lifetime = NumberRange.new(0.25, 0.5)
+		e.Speed = NumberRange.new(0.5, 2)
+		e.SpreadAngle = Vector2.new(180, 180)
+		e.Size = NumberSequence.new(p.Size.X * 0.5, 0)
+		e.Transparency = NumberSequence.new(0.1, 1)
+		e.Parent = p
+	end
+end
+
 function ProjectileService.Fire(spec)
 	if #active >= MAX_ACTIVE then
 		return nil
@@ -45,11 +112,9 @@ function ProjectileService.Fire(spec)
 	p.Material = Enum.Material.Neon
 	p.Color = spec.Color or Color3.fromRGB(255, 160, 80)
 	p.Size = Vector3.new(1, 1, 1) * math.max(0.6, spec.Radius * 1.2)
-	p.CFrame = CFrame.new(spec.Origin)
-	local light = Instance.new("PointLight")
-	light.Color = p.Color
-	light.Range = 8
-	light.Parent = p
+	local dir0 = if spec.Direction.Magnitude > 0 then spec.Direction.Unit else Vector3.new(0, 0, -1)
+	p.CFrame = CFrame.lookAt(spec.Origin, spec.Origin + dir0)
+	ProjectileService.Decorate(p, spec)
 	p.Parent = folder
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -105,7 +170,7 @@ local function step(dt: number)
 		local nextPos = if hitWorld then hitWorld.Position else proj.Pos + move
 		proj.Travelled += (nextPos - proj.Pos).Magnitude
 		proj.Pos = nextPos
-		proj.Part.CFrame = CFrame.new(nextPos)
+		proj.Part.CFrame = CFrame.lookAt(nextPos, nextPos + proj.Dir)
 
 		local done = false
 		if spec.Hostile then
@@ -149,6 +214,10 @@ local function step(dt: number)
 		if done or hitWorld or proj.Travelled >= spec.Range then
 			if spec.OnExpire then
 				task.spawn(spec.OnExpire, nextPos)
+			end
+			-- everyone nearby sees the impact (explosion / splash / arrow thud)
+			if S.CombatService and S.CombatService.FxNear then
+				S.CombatService.FxNear(nextPos, { Type = "Impact", Position = nextPos, Vfx = spec.Vfx or "Physical", Radius = spec.ImpactRadius or math.max(2, spec.Radius * 2.2) }, 220)
 			end
 			finish(i)
 		end

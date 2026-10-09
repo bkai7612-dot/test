@@ -22,6 +22,7 @@ local Net = require(Shared.Net)
 
 local HUDController = {
 	AnimationController = nil :: any,
+	VfxController = nil :: any,
 	TrainingGoal = nil :: number?,
 	TrainingEnds = nil :: number?,
 }
@@ -336,6 +337,10 @@ local function onFx(payload)
 		Debris:AddItem(p, 0.4)
 	elseif t == "Stagger" then
 		HUDController.Toast("Enemy staggered - strike now!", "Reward")
+	elseif t == "Impact" then
+		HUDController.VfxController.Impact(payload.Position, payload.Vfx, payload.Radius, payload.Ground)
+	elseif t == "EntityHit" then
+		HUDController.VfxController.EntityHit(payload.Model, payload.Position, payload.DamageType, payload.Crit, payload.Staggered, payload.Heavy, payload.Died)
 	elseif t == "Anim" then
 		HUDController.AnimationController.PlayFor(payload.UserId, payload)
 	elseif t == "Blink" then
@@ -522,6 +527,7 @@ function HUDController.Init(deps)
 	CombatController = deps.CombatController
 	InputController = deps.InputController
 	HUDController.AnimationController = deps.AnimationController
+	HUDController.VfxController = deps.VfxController
 	T = UIKit.Theme
 	gui = UIKit.new("ScreenGui", { Name = "TotfHUD", ResetOnSpawn = false, IgnoreGuiInset = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui") })
 	uiScale = UIKit.new("UIScale", { Parent = gui })

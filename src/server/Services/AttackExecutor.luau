@@ -342,6 +342,11 @@ local function runStep(attacker, step, isFollowUp: boolean, primary: Player?): b
 				Color = if spec.DamageType == "Fire" then Color3.fromRGB(255, 120, 40) elseif spec.DamageType == "Magic" then Color3.fromRGB(140, 120, 255) else Color3.fromRGB(230, 220, 200),
 				Hostile = true,
 				IgnoreCharacters = true,
+				Vfx = if spec.DamageType == "Fire" then "Fire"
+					elseif spec.DamageType == "Magic" then "Magic"
+					elseif spec.Status and spec.Status.Poison then "Poison"
+					elseif (step.Radius or 2) <= 1.3 then "Arrow"
+					else "Physical",
 				HomingTarget = primaryRt and primaryRt.Root or nil,
 				Homing = step.Homing or 0,
 				OnHit = function(plr, pos)

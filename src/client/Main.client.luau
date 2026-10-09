@@ -15,6 +15,7 @@ local HUDController = require(Controllers.HUDController)
 local MenuController = require(Controllers.MenuController)
 local EffectsController = require(Controllers.EffectsController)
 local AnimationController = require(Controllers.AnimationController)
+local VfxController = require(Controllers.VfxController)
 
 local deps = {
 	UIKit = UIKit,
@@ -27,11 +28,13 @@ local deps = {
 	MenuController = MenuController,
 	EffectsController = EffectsController,
 	AnimationController = AnimationController,
+	VfxController = VfxController,
 }
 
 ClientState.Init()
 AudioController.Init()
 AnimationController.Init()
+VfxController.Init(deps)
 CameraController.Init()
 CombatController.Init(deps)
 HUDController.Init(deps)

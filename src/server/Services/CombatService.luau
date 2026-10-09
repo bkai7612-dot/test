@@ -171,6 +171,19 @@ function CombatService.HitEntity(player: Player, rt, e, power: number, motion: n
 	})
 	if result.Damage > 0 or result.Countered then
 		local epos = S.EntityService.Position(e) or pos
+		-- hit reaction for everyone nearby (flash, sparks, damage-type burst)
+		local rootEntity = e.Parent or e
+		fxNear(epos, {
+			Type = "EntityHit",
+			Model = rootEntity.Model,
+			Position = epos,
+			DamageType = damageType,
+			Crit = critKind ~= nil,
+			Staggered = result.Staggered,
+			Heavy = poise >= 30,
+			Melee = kind == "Melee",
+			Died = result.Died,
+		}, 160)
 		fx:FireClient(player, {
 			Type = "Damage",
 			Position = epos + Vector3.new(0, 3, 0),
@@ -271,6 +284,12 @@ local function meleeSweep(player: Player, rt, range: number, arc: number, power:
 end
 
 local function fireProjectile(player: Player, rt, aim: Vector3, speed: number, radius: number, range: number, power: number, motion: number, poise: number, damageType: string, statusBase, color: Color3, pierce: boolean?)
+	local vfxKind = if rt.Stats.WeaponType == "Bow" and damageType == "Physical" then "Arrow"
+		elseif damageType == "Fire" then "Fire"
+		elseif damageType == "Magic" then "Magic"
+		elseif damageType == "Holy" then "Holy"
+		elseif statusBase and statusBase.Poison then "Poison"
+		else "Physical"
 	local root = rt.Root
 	local dir = if validVector(aim) then aim.Unit else root.CFrame.LookVector
 	-- the server only accepts aim within 75 degrees of the character's facing (no shooting backwards)
@@ -288,6 +307,8 @@ local function fireProjectile(player: Player, rt, aim: Vector3, speed: number, r
 		Color = color,
 		Hostile = false,
 		Owner = player,
+		Vfx = vfxKind,
+		ImpactRadius = if vfxKind == "Fire" then radius * 3.5 elseif vfxKind == "Arrow" then 1.5 else radius * 2.5,
 		Pierce = pierce,
 		PvpTargets = if #pvp > 0 then pvp else nil,
 		OnHit = function(e)
@@ -548,6 +569,7 @@ local function onAbility(player: Player, rt, payload)
 			fireProjectile(player, rt, payload.Aim, def.Speed, def.Radius, def.Range, power, 1, poise, dtype, def.Status, DAMAGE_COLORS[dtype] or DAMAGE_COLORS.Physical)
 		elseif def.Type == "Circle" then
 			fxNear(pos, { Type = "AbilityFx", Ability = id, Position = pos, Radius = def.Radius }, 150)
+			fxNear(pos, { Type = "Impact", Position = pos - Vector3.new(0, 2.5, 0), Vfx = if dtype == "Physical" then "Physical" else dtype, Radius = def.Radius, Ground = true }, 200)
 			for _, e in S.EntityService.Near(pos, def.Radius, 10) do
 				if not e.Parent then
 					CombatService.HitEntity(player, rt, e, power, 1, poise, dtype, def.Status, "Ability")

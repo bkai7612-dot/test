@@ -10,6 +10,7 @@ local Audio = {
 	Sfx = {
 		Swing = { Id = "rbxasset://sounds/swordslash.wav", Volume = 0.5, PitchRange = { 0.9, 1.1 } },
 		HeavySwing = { Id = "rbxasset://sounds/swordlunge.wav", Volume = 0.6, PitchRange = { 0.8, 0.95 } },
+		Explosion = { Id = "rbxasset://sounds/swordlunge.wav", Volume = 0.9, PitchRange = { 0.35, 0.45 } },
 		Hit = { Id = "rbxasset://sounds/swordslash.wav", Volume = 0.6, PitchRange = { 0.6, 0.75 } },
 		Hurt = { Id = "rbxasset://sounds/swordlunge.wav", Volume = 0.6, PitchRange = { 0.5, 0.6 } },
 		Parry = { Id = "rbxasset://sounds/unsheath.wav", Volume = 0.9, PitchRange = { 1.2, 1.3 } },

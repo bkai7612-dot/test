@@ -21,6 +21,7 @@
 ]]
 
 local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
+local VfxController = require(script.Parent.VfxController)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -342,6 +343,11 @@ function AnimationController.Play(char: Model?, payload)
 		return
 	end
 	local character = char :: Model
+	if payload.Anim == "Light" or payload.Anim == "Heavy" then
+		-- weapon trail across the strike
+		local w = payload.Windup or 0.2
+		VfxController.Slash(character, w * 0.75, if payload.Anim == "Heavy" then 0.35 else 0.25)
+	end
 	local frames = AnimationController.Build(payload)
 	if not frames then
 		return
