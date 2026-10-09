@@ -15564,9 +15564,14 @@ end
               <string name="Source"><![CDATA[--[[
 	AnimationController
 	Procedural combat animations for player characters, built from keyframed joint poses
-	(no uploaded animation assets needed). It drives the shoulder, waist and root Motor6D C0s
-	on top of Roblox's default walk/idle animations, works for R15 and R6, and runs on every
-	client: your own swings play instantly; other players' swings arrive as "Anim" Fx events.
+	(no uploaded animation assets needed).
+
+	Primary path: the poses are turned into a KeyframeSequence at runtime, registered with
+	KeyframeSequenceProvider and played through the character's Animator at Action priority.
+	This works with BOTH classic Motor6D rigs and the newer AnimationConstraint avatar joints
+	(where joint C0s are read-only to scripts). Fallback: if registration fails, Motor6D C0s
+	are driven directly. Runs on every client: your own swings play instantly; other players'
+	swings arrive as "Anim" Fx events.
 
 	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flask,
 	Cast (abilities), Hurt (flinch), plus a held Block guard while the Blocking attribute is set.
@@ -15578,6 +15583,7 @@ end
 	  root      x rotates the whole body (used for the roll)
 ]]
 
+local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -15763,15 +15769,185 @@ function AnimationController.Build(payload): { Frame }?
 	return nil
 end
 
-function AnimationController.Play(character: Model?, payload)
-	if not character or not character.Parent then
+-- ===================================================================== Animator path
+-- Joint rotation (C0 orientation) per rig, used to convert our parent-space poses into
+-- joint-space Pose.CFrame values (Transform). R15 joints are axis-aligned.
+local R6_JOINT_ROT = {
+	R = CFrame.Angles(0, math.pi / 2, 0),
+	L = CFrame.Angles(0, -math.pi / 2, 0),
+	Root = CFrame.Angles(-math.pi / 2, 0, math.pi),
+}
+
+local function poseCFrame(v, jointRot: CFrame?): CFrame
+	local rot = CFrame.Angles(math.rad(v[1] or 0), math.rad(v[2] or 0), math.rad(v[3] or 0))
+	local offset = Vector3.new(v[4] or 0, v[5] or 0, v[6] or 0)
+	if not jointRot then
+		return CFrame.new(offset) * rot
+	end
+	-- conjugate into the joint's space
+	local jr = jointRot :: CFrame
+	return CFrame.new(jr:VectorToObjectSpace(offset)) * (jr:Inverse() * rot * jr)
+end
+
+local function newPose(name: string, cf: CFrame, parent: Instance): Pose
+	local p = Instance.new("Pose")
+	p.Name = name
+	p.CFrame = cf
+	p.Weight = 1
+	p.EasingStyle = Enum.PoseEasingStyle.Cubic
+	p.EasingDirection = Enum.PoseEasingDirection.InOut
+	p.Parent = parent
+	return p
+end
+
+local ZERO = { 0, 0, 0, 0, 0, 0 }
+
+local function buildSequence(frames: { Frame }, isR6: boolean, looped: boolean): KeyframeSequence
+	local kfs = Instance.new("KeyframeSequence")
+	kfs.Loop = looped
+	kfs.Priority = Enum.AnimationPriority.Action
+	for _, f in frames do
+		local kf = Instance.new("Keyframe")
+		kf.Time = f.T
+		local pose = f.Pose
+		local root = newPose("HumanoidRootPart", CFrame.new(), kf)
+		root.Weight = 0
+		if isR6 then
+			-- R6 has no waist: fold the waist lean into the root joint
+			local combined = CFrame.Angles(math.rad((pose.Root or ZERO)[1] + (pose.W or ZERO)[1]), math.rad((pose.Root or ZERO)[2] + (pose.W or ZERO)[2]), math.rad((pose.Root or ZERO)[3] + (pose.W or ZERO)[3]))
+			local jr = R6_JOINT_ROT.Root
+			local torso = newPose("Torso", jr:Inverse() * combined * jr, root)
+			newPose("Right Arm", poseCFrame(pose.R or ZERO, R6_JOINT_ROT.R), torso)
+			newPose("Left Arm", poseCFrame(pose.L or ZERO, R6_JOINT_ROT.L), torso)
+		else
+			local lower = newPose("LowerTorso", poseCFrame(pose.Root or ZERO), root)
+			local upper = newPose("UpperTorso", poseCFrame(pose.W or ZERO), lower)
+			newPose("RightUpperArm", poseCFrame(pose.R or ZERO), upper)
+			newPose("LeftUpperArm", poseCFrame(pose.L or ZERO), upper)
+		end
+		kf.Parent = kfs
+	end
+	return kfs
+end
+
+local registered = {} -- [cacheKey] = animation id string, or false if registration failed
+local tracks = {} -- [Animator] = { [cacheKey] = AnimationTrack }
+local current = {} -- [Model] = AnimationTrack (action currently playing)
+local blockTracks = {} -- [Model] = AnimationTrack (held guard)
+local animatorPathOk = true
+
+local function animatorFor(character: Model): (Animator?, boolean)
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return nil, false
+	end
+	local animator = hum:FindFirstChildOfClass("Animator")
+	return animator, hum.RigType == Enum.HumanoidRigType.R6
+end
+
+local function trackFor(character: Model, key: string, frames: { Frame }, looped: boolean): AnimationTrack?
+	local animator, isR6 = animatorFor(character)
+	if not animator then
+		return nil
+	end
+	local fullKey = key .. (if isR6 then "|R6" else "|R15")
+	local id = registered[fullKey]
+	if id == nil then
+		local ok, result = pcall(function()
+			return KeyframeSequenceProvider:RegisterKeyframeSequence(buildSequence(frames, isR6, looped))
+		end)
+		if ok and type(result) == "string" and result ~= "" then
+			id = result
+		else
+			id = false
+			warn("[AnimationController] could not register animation, using joint fallback: " .. tostring(result))
+		end
+		registered[fullKey] = id
+	end
+	if not id then
+		return nil
+	end
+	local perAnimator = tracks[animator]
+	if not perAnimator then
+		perAnimator = {}
+		tracks[animator] = perAnimator
+		animator.AncestryChanged:Connect(function()
+			if not animator.Parent then
+				tracks[animator] = nil
+			end
+		end)
+	end
+	local track = perAnimator[fullKey]
+	if not track then
+		local anim = Instance.new("Animation")
+		anim.AnimationId = id :: string
+		local ok, result = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if not ok then
+			warn("[AnimationController] LoadAnimation failed: " .. tostring(result))
+			return nil
+		end
+		track = result
+		track.Priority = Enum.AnimationPriority.Action
+		track.Looped = looped
+		perAnimator[fullKey] = track
+	end
+	return track
+end
+
+local function cacheKey(payload): string
+	return ("%s|%s|%s|%.2f|%.2f"):format(tostring(payload.Anim), tostring(payload.WeaponType), tostring(payload.Combo), payload.Windup or 0, payload.Recovery or 0)
+end
+
+function AnimationController.Play(char: Model?, payload)
+	if not char or not char.Parent then
 		return
 	end
+	local character = char :: Model
 	local frames = AnimationController.Build(payload)
 	if not frames then
 		return
 	end
+	if animatorPathOk then
+		local track = trackFor(character, cacheKey(payload), frames, false)
+		if track then
+			local prev = current[character]
+			if prev and prev ~= track and prev.IsPlaying then
+				prev:Stop(0.05)
+			end
+			track:Play(0.04, 1, 1)
+			current[character] = track
+			return
+		end
+	end
+	-- fallback: drive Motor6D C0s directly (classic rigs only)
 	playing[character] = { Frames = frames, Start = os.clock(), Duration = frames[#frames].T }
+end
+
+local function setBlocking(character: Model, on: boolean)
+	if animatorPathOk then
+		local frames = { { T = 0, Pose = BLOCK }, { T = 1, Pose = BLOCK } }
+		local track = if on or blockTracks[character] then trackFor(character, "Block", frames, true) else nil
+		if track then
+			if on and not track.IsPlaying then
+				track:Play(0.1, 1, 1)
+				blockTracks[character] = track
+			elseif not on and track.IsPlaying then
+				track:Stop(0.15)
+				blockTracks[character] = nil
+			end
+			return
+		end
+	end
+	if on then
+		holding[character] = BLOCK
+	elseif holding[character] then
+		holding[character] = nil
+		if not playing[character] then
+			applyPose(character, nil)
+		end
+	end
 end
 
 function AnimationController.PlayFor(userId: number, payload)
@@ -15800,21 +15976,19 @@ local function sample(state, t: number): Pose
 end
 
 function AnimationController.Init()
+	local blockingState = {} -- [Model] = bool
 	RunService.RenderStepped:Connect(function()
-		-- held guard pose for blocking players
 		for _, plr in Players:GetPlayers() do
 			local char = plr.Character
 			if char then
-				if plr:GetAttribute("Blocking") then
-					holding[char] = BLOCK
-				elseif holding[char] then
-					holding[char] = nil
-					if not playing[char] then
-						applyPose(char, nil)
-					end
+				local on = plr:GetAttribute("Blocking") == true
+				if blockingState[char] ~= on then
+					blockingState[char] = on
+					setBlocking(char, on)
 				end
 			end
 		end
+		-- fallback path (direct joints)
 		local now = os.clock()
 		for char, state in playing do
 			local t = now - state.Start
@@ -15831,6 +16005,13 @@ function AnimationController.Init()
 			if not playing[char] and char.Parent then
 				applyPose(char, pose)
 			end
+		end
+	end)
+	Players.PlayerRemoving:Connect(function(plr)
+		if plr.Character then
+			blockingState[plr.Character] = nil
+			current[plr.Character] = nil
+			blockTracks[plr.Character] = nil
 		end
 	end)
 	Players.LocalPlayer.CharacterAdded:Connect(function(char)

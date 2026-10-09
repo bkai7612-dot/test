@@ -31,13 +31,17 @@ for c in used:
                 restricted.setdefault(m["Name"], set()).add(k)
             else:
                 free.add(m["Name"])
+PLAIN_TABLES = {"opts", "def", "spec", "step", "payload", "config", "a", "q", "c", "out", "rewards", "result", "r", "e", "ai", "ctl", "run", "rt", "state", "session", "profile", "p", "GameConfig"}
 problems = 0
 for f in glob.glob("src/**/*.luau", recursive=True):
     for i, line in enumerate(open(f), 1):
         if line.strip().startswith("--"):
             continue
-        for m in re.finditer(r"\.([A-Z]\w*)\s*=[^=]", line):
-            n = m.group(1)
+        for m in re.finditer(r"(\w+)\.([A-Z]\w*)\s*=[^=]", line):
+            # plain Lua config tables, not Instances
+            if m.group(1) in PLAIN_TABLES:
+                continue
+            n = m.group(2)
             if n in restricted and n not in free:
                 problems += 1
                 print(f"{f}:{i}: {n} is not script-writable on {sorted(restricted[n])}")
