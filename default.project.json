@@ -1,0 +1,48 @@
+{
+  "name": "TowerOfTheFallen",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": { "$path": "src/shared" }
+    },
+    "ServerScriptService": {
+      "Server": { "$path": "src/server" }
+    },
+    "ServerStorage": {
+      "Tests": { "$path": "tests" }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "CameraMaxZoomDistance": 32,
+        "CameraMinZoomDistance": 6,
+        "CharacterWalkSpeed": 16,
+        "CharacterJumpPower": 42,
+        "CharacterUseJumpPower": true
+      },
+      "StarterPlayerScripts": {
+        "Client": { "$path": "src/client" }
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "StreamingEnabled": true,
+        "Gravity": 196.2
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "Ambient": [0.18, 0.17, 0.2],
+        "OutdoorAmbient": [0.32, 0.3, 0.34],
+        "Brightness": 1.4,
+        "ClockTime": 17.6,
+        "FogColor": [0.27, 0.27, 0.31],
+        "FogEnd": 900,
+        "FogStart": 80,
+        "GlobalShadows": true
+      }
+    },
+    "SoundService": {
+      "$properties": { "RespectFilteringEnabled": true }
+    }
+  }
+}

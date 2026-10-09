@@ -1,0 +1,28 @@
+local Geometry = require(game:GetService("ReplicatedStorage").Shared.Logic.Geometry)
+
+return function(t)
+	local expect = t.expect
+	t.it("cone includes targets in front and excludes behind", function()
+		expect(Geometry.inCone(0, 0, 0, 1, 0, 5, 8, 90)).toBe(true)
+		expect(Geometry.inCone(0, 0, 0, 1, 0, -5, 8, 90)).toBe(false)
+		expect(Geometry.inCone(0, 0, 0, 1, 5, 1, 8, 90)).toBe(false)
+		expect(Geometry.inCone(0, 0, 0, 1, 0, 9, 8, 90)).toBe(false)
+		expect(Geometry.inCone(0, 0, 0, 1, 0, 9, 8, 90, 1.5)).toBe(true)
+	end)
+	t.it("line respects width and length", function()
+		expect(Geometry.inLine(0, 0, 1, 0, 10, 1, 20, 4)).toBe(true)
+		expect(Geometry.inLine(0, 0, 1, 0, 10, 3, 20, 4)).toBe(false)
+		expect(Geometry.inLine(0, 0, 1, 0, 25, 0, 20, 4)).toBe(false)
+		expect(Geometry.inLine(0, 0, 1, 0, -2, 0, 20, 4)).toBe(false)
+	end)
+	t.it("ring has a safe centre", function()
+		expect(Geometry.inRing(0, 0, 2, 0, 5, 10)).toBe(false)
+		expect(Geometry.inRing(0, 0, 7, 0, 5, 10)).toBe(true)
+		expect(Geometry.inRing(0, 0, 12, 0, 5, 10)).toBe(false)
+	end)
+	t.it("backstab detection", function()
+		-- target at origin facing +Z; attacker at -Z is behind
+		expect(Geometry.isBehind(0, 0, 0, 1, 0, -3, 60)).toBe(true)
+		expect(Geometry.isBehind(0, 0, 0, 1, 0, 3, 60)).toBe(false)
+	end)
+end
