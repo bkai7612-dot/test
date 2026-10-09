@@ -117,7 +117,8 @@ end
 
 -- ===================================================================== lighting
 local function buildLighting()
-	Lighting.Technology = Enum.Technology.Future
+	-- NOTE: Lighting.Technology cannot be set by scripts (Roblox-only security); it is set in
+	-- default.project.json instead.
 	local atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
 	atmo.Density = 0.42
 	atmo.Offset = 0.15
@@ -750,14 +751,24 @@ function WorldBuilder.Init(_services)
 	map = Instance.new("Folder")
 	map.Name = "Map"
 	map.Parent = workspace
-	buildLighting()
-	buildTerrain()
-	buildTower()
-	buildHub()
-	buildShrines()
-	buildChests()
-	buildTraining()
-	buildRegions()
+	-- Each step is isolated: a failure in decoration must never leave the world without ground.
+	-- Terrain is built first because everything stands on it.
+	local steps = {
+		{ "terrain", buildTerrain },
+		{ "lighting", buildLighting },
+		{ "tower", buildTower },
+		{ "hub", buildHub },
+		{ "shrines", buildShrines },
+		{ "chests", buildChests },
+		{ "training", buildTraining },
+		{ "regions", buildRegions },
+	}
+	for _, step in steps do
+		local ok, err = pcall(step[2])
+		if not ok then
+			warn(("[WorldBuilder] building %s failed: %s"):format(step[1], tostring(err)))
+		end
+	end
 	-- spawn location in the hub
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Anchored = true

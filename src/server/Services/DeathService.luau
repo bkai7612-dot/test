@@ -176,6 +176,15 @@ function DeathService.Start()
 				local root = rt.Root
 				local hum = rt.Humanoid
 				if root and root.Parent and rt.Combat and not rt.Combat.Dead then
+					-- safety net: falling out of the open world returns you to solid ground instead
+					-- of killing you (arenas handle their own falls)
+					if root.Position.Y < -60 and rt.Encounter == nil and rt.Character then
+						local back = (rt.LastGroundPos or S.PlayerStateService.RespawnPosition(player)) + Vector3.new(0, 6, 0)
+						S.AntiCheatService.AllowTeleport(player)
+						root.AssemblyLinearVelocity = Vector3.zero
+						rt.Character:PivotTo(CFrame.new(back))
+						S.NotifyService.Toast(player, "The abyss rejects you.", "Warning")
+					end
 					if hum and hum.FloorMaterial ~= Enum.Material.Air and root.Position.Y > -40 and rt.Encounter == nil then
 						rt.LastGroundPos = root.Position - Vector3.new(0, 2.5, 0)
 					end

@@ -22,6 +22,7 @@
         <G>0.3</G>
         <B>0.34</B>
       </Color3>
+      <token name="Technology">4</token>
     </Properties>
   </Item>
   <Item class="ReplicatedStorage" referent="1">
@@ -8734,6 +8735,15 @@ function DeathService.Start()
 				local root = rt.Root
 				local hum = rt.Humanoid
 				if root and root.Parent and rt.Combat and not rt.Combat.Dead then
+					-- safety net: falling out of the open world returns you to solid ground instead
+					-- of killing you (arenas handle their own falls)
+					if root.Position.Y < -60 and rt.Encounter == nil and rt.Character then
+						local back = (rt.LastGroundPos or S.PlayerStateService.RespawnPosition(player)) + Vector3.new(0, 6, 0)
+						S.AntiCheatService.AllowTeleport(player)
+						root.AssemblyLinearVelocity = Vector3.zero
+						rt.Character:PivotTo(CFrame.new(back))
+						S.NotifyService.Toast(player, "The abyss rejects you.", "Warning")
+					end
 					if hum and hum.FloorMaterial ~= Enum.Material.Air and root.Position.Y > -40 and rt.Encounter == nil then
 						rt.LastGroundPos = root.Position - Vector3.new(0, 2.5, 0)
 					end
@@ -12358,7 +12368,8 @@ end
 
 -- ===================================================================== lighting
 local function buildLighting()
-	Lighting.Technology = Enum.Technology.Future
+	-- NOTE: Lighting.Technology cannot be set by scripts (Roblox-only security); it is set in
+	-- default.project.json instead.
 	local atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
 	atmo.Density = 0.42
 	atmo.Offset = 0.15
@@ -12991,14 +13002,24 @@ function WorldBuilder.Init(_services)
 	map = Instance.new("Folder")
 	map.Name = "Map"
 	map.Parent = workspace
-	buildLighting()
-	buildTerrain()
-	buildTower()
-	buildHub()
-	buildShrines()
-	buildChests()
-	buildTraining()
-	buildRegions()
+	-- Each step is isolated: a failure in decoration must never leave the world without ground.
+	-- Terrain is built first because everything stands on it.
+	local steps = {
+		{ "terrain", buildTerrain },
+		{ "lighting", buildLighting },
+		{ "tower", buildTower },
+		{ "hub", buildHub },
+		{ "shrines", buildShrines },
+		{ "chests", buildChests },
+		{ "training", buildTraining },
+		{ "regions", buildRegions },
+	}
+	for _, step in steps do
+		local ok, err = pcall(step[2])
+		if not ok then
+			warn(("[WorldBuilder] building %s failed: %s"):format(step[1], tostring(err)))
+		end
+	end
 	-- spawn location in the hub
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Anchored = true

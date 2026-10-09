@@ -65,7 +65,8 @@
         ],
         "FogEnd": 900,
         "FogStart": 80,
-        "GlobalShadows": true
+        "GlobalShadows": true,
+        "Technology": "Future"
       }
     },
     "SoundService": {

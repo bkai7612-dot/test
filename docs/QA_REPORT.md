@@ -71,6 +71,12 @@ Defects caught by static analysis:
 
 - The **client controllers** (input, lock-on camera, menus, mobile and gamepad). The Tester ran out of time. Only the Developer's self-review and type analysis apply to them.
 
+## Defects found in the first Studio playtest (user report)
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| S1 | **Critical** | The player fell through the world and died right after spawning. `WorldBuilder` set `Lighting.Technology`, which only Roblox can write. The error aborted the whole world build, so no terrain or map existed. | **Fixed.** `Technology` is now set in `default.project.json`. Each world-build step is isolated with pcall, and terrain is built first. A fall-rescue returns players who fall below Y = −60 to solid ground. New `tools/check_api_security.py` scans for writes to non-script-writable properties; it flags the old code and passes on the fix. |
+
 ## Known limitations / open items
 
 1. **No Studio playtest yet.** The runtime behaviour of the Roblox-specific code still needs the manual playtests in `CHECKLIST.md`: physics, Humanoid movement, network ownership, UI layout, touch button placement, telegraph visuals and performance.
