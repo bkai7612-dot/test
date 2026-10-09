@@ -3,13 +3,19 @@
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
-      "Shared": { "$path": "src/shared" }
+      "Shared": {
+        "$path": "src/shared"
+      }
     },
     "ServerScriptService": {
-      "Server": { "$path": "src/server" }
+      "Server": {
+        "$path": "src/server"
+      }
     },
     "ServerStorage": {
-      "Tests": { "$path": "tests" }
+      "Tests": {
+        "$path": "tests"
+      }
     },
     "StarterPlayer": {
       "$properties": {
@@ -20,7 +26,16 @@
         "CharacterUseJumpPower": true
       },
       "StarterPlayerScripts": {
-        "Client": { "$path": "src/client" }
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$path": "src/client"
+        }
+      },
+      "StarterCharacterScripts": {
+        "$className": "StarterCharacterScripts",
+        "Health": {
+          "$path": "src/character/Health.server.luau"
+        }
       }
     },
     "Workspace": {
@@ -31,18 +46,32 @@
     },
     "Lighting": {
       "$properties": {
-        "Ambient": [0.18, 0.17, 0.2],
-        "OutdoorAmbient": [0.32, 0.3, 0.34],
+        "Ambient": [
+          0.18,
+          0.17,
+          0.2
+        ],
+        "OutdoorAmbient": [
+          0.32,
+          0.3,
+          0.34
+        ],
         "Brightness": 1.4,
         "ClockTime": 17.6,
-        "FogColor": [0.27, 0.27, 0.31],
+        "FogColor": [
+          0.27,
+          0.27,
+          0.31
+        ],
         "FogEnd": 900,
         "FogStart": 80,
         "GlobalShadows": true
       }
     },
     "SoundService": {
-      "$properties": { "RespectFilteringEnabled": true }
+      "$properties": {
+        "RespectFilteringEnabled": true
+      }
     }
   }
 }

@@ -49,6 +49,7 @@ function CombatCore.newPlayerState(stats, now: number)
 		Buffs = {},
 		Cooldowns = {},
 		CritUntil = 0,
+		AttackSeq = 0, -- incremented when a stagger/death cancels pending swings
 		Status = CombatCore.newStatus(),
 	}
 end

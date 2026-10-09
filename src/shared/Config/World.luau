@@ -37,7 +37,7 @@ World.Checkpoints = {
 	{ Id = "forest", Name = "Mistveil Shrine", Position = { -360, 0, 130 } },
 	{ Id = "village", Name = "Ashford Well Shrine", Position = { 350, 0, 90 } },
 	{ Id = "cemetery", Name = "Gravekeeper's Shrine", Position = { -290, 0, -250 } },
-	{ Id = "caves", Name = "Deepmouth Shrine", Position = { -600, 0, -140 } },
+	{ Id = "caves", Name = "Deepmouth Shrine", Position = { -565, 0, -170 } },
 	{ Id = "fortress", Name = "Gatehouse Shrine", Position = { 360, 0, -300 } },
 	{ Id = "vale", Name = "Vale Spring Shrine", Position = { 0, 0, -640 } },
 }

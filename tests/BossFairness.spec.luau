@@ -1,7 +1,6 @@
 -- Tester-owned fairness and design checks for all 20 bosses.
 local RS = game:GetService("ReplicatedStorage")
 local Bosses = require(RS.Shared.Config.Bosses)
-local Formulas = require(RS.Shared.Logic.Formulas)
 local BossBrain = require(game:GetService("ServerScriptService").Server.Core.BossBrain)
 local F = Bosses.Fairness
 
@@ -45,7 +44,7 @@ return function(t)
 		for floor = 1, 20 do
 			for _, a in allAttacks(Bosses.List[floor]) do
 				for i, step in BossBrain.steps(a) do
-					local w, r = BossBrain.rawTiming(step, floor)
+					local w = BossBrain.rawTiming(step, floor)
 					local min = if i == 1 then F.MinWindup else F.MinComboFollowUp
 					if w < min then
 						error(("boss %d '%s' step %d windup %.2f < %.2f"):format(floor, a.Name, i, w, min))

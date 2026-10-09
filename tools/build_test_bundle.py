@@ -55,7 +55,12 @@ def walk_tree(node, vpath, out):
             continue
         cpath = vpath + [key]
         if "$path" in child:
-            collect(os.path.join(ROOT, child["$path"]), cpath, out)
+            target = os.path.join(ROOT, child["$path"])
+            if os.path.isdir(target):
+                collect(target, cpath, out)
+            elif re.match(r".*(?<!\.server)(?<!\.client)\.luau?$", target):
+                out.append((cpath, "module", target))
+            # single Script/LocalScript files are not requireable; skip
         else:
             out.append((cpath, "folder", None))
         walk_tree(child, cpath, out)

@@ -64,6 +64,8 @@ function ProfileSchema.default()
 			TextScale = 1,
 			LockOnToggle = true,
 			ScreenShake = true,
+			MouseLock = true,
+			ShowControls = true,
 		},
 		LostCurrency = nil,
 		ShopPurchases = {},
