@@ -110,11 +110,18 @@ local function runDrill(player: Player, rt, session, station: BasePart)
 			local attack = if i % 2 == 0
 				then Attacks.Circle({ Name = "Drill Slam", Windup = def.Windup, Recovery = 0.4, Damage = 1, Radius = 7, Offset = 3, Parryable = def.Kind == "Parry" })
 				else Attacks.Cone({ Name = "Drill Cut", Windup = def.Windup, Recovery = 0.4, Damage = 1, Range = 12, Arc = 100, Parryable = true })
+			-- the trainee must actually be within reach when the attack begins; standing far away
+			-- (AFK) counts as a miss, not an avoid
+			local prt = S.PlayerStateService.Get(player)
+			local engaged = prt ~= nil and prt.Root ~= nil and (prt.Root.Position - root.Position).Magnitude <= 13
 			S.AttackExecutor.Run(attacker, attack, player)
 			task.wait(0.25)
 			local result = outcome
-			if result == nil or result == "Dodged" then
-				result = if def.Kind == "Avoid" then "Avoided" else (if result == "Dodged" then "Avoided" else "Miss")
+			if not engaged then
+				result = "Miss"
+				S.NotifyService.Toast(player, "Stay close to the drill master!", "Warning")
+			elseif result == nil or result == "Dodged" then
+				result = if def.Kind == "Avoid" then "Avoided" else "Miss"
 			end
 			local state = TrainingCore.drillAttack(session, result)
 			send(player, { Type = "Progress", Count = session.Count, Goal = def.Required, Failures = session.Failures })
@@ -162,14 +169,15 @@ local function start(player: Player, challengeId: string, station: BasePart)
 	elseif def.Kind == "Spar" then
 		local ai = S.EnemyService.Spawn(def.Enemy, station.Position + Vector3.new(0, 4, -12), {
 			Name = "Sparring Partner",
+			Owner = player, -- only the trainee can damage it
 			HealthScale = def.HealthMult,
 			NoRewards = true,
 			Leash = 60,
 			Restrict = function(plr)
 				return plr == player
 			end,
-			OnDeath = function()
-				if rt.Training == session then
+			OnDeath = function(_, killer)
+				if rt.Training == session and killer == player then
 					TrainingCore.spar(session, true)
 					finish(player, rt, session)
 				end
@@ -256,8 +264,14 @@ function TrainingService.Start()
 	end
 	CollectionService:GetInstanceAddedSignal("TrainingDummy"):Connect(hookDummy)
 
-	S.EntityService.Damaged:Connect(function(e, player)
+	S.EntityService.Damaged:Connect(function(e, player, _amount, info)
 		if not player or e.Kind ~= "Dummy" then
+			return
+		end
+		-- only weapon swings count, and one swing that clips several dummies counts once
+		if not info or info.Kind ~= "Melee" then
+			e.Target.Health = e.Target.MaxHealth
+			S.EntityService.PushHealth(e)
 			return
 		end
 		e.Target.Health = e.Target.MaxHealth
@@ -265,7 +279,12 @@ function TrainingService.Start()
 		local rt = S.PlayerStateService.Get(player)
 		local session = rt and rt.Training
 		if session and session.Def.Kind == "Hits" then
-			local state = TrainingCore.hit(session, now())
+			local t = now()
+			if t - (session.LastHitAt or -1e9) < 0.12 then
+				return
+			end
+			session.LastHitAt = t
+			local state = TrainingCore.hit(session, t)
 			send(player, { Type = "Progress", Count = session.Count, Goal = session.Def.Hits })
 			if state ~= "Running" then
 				finish(player, rt, session)

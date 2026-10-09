@@ -104,7 +104,7 @@ local function critFor(rt, e, attackerPos: Vector3, wtype): (number, string?)
 		rt.Combat.CritUntil = 0
 		return 1.5 + bonus, "Critical"
 	end
-	if e.Kind ~= "Boss" and e.Root and e.Root.Parent then
+	if e.Kind ~= "Boss" and e.Parent == nil and e.Root and e.Root.Parent then
 		local look = e.Root.CFrame.LookVector
 		local tp = e.Root.Position
 		if Geometry.isBehind(tp.X, tp.Z, look.X, look.Z, attackerPos.X, attackerPos.Z, C.BackstabAngle) then
@@ -142,6 +142,9 @@ end
 
 -- Applies `motion`-scaled damage from `player` to entity `e`.
 function CombatService.HitEntity(player: Player, rt, e, power: number, motion: number, poise: number, damageType: string, statusBase, kind: string)
+	if not CombatService.CanHit(rt, e) then
+		return { Damage = 0, Died = false, Staggered = false, Countered = false }
+	end
 	local pos = rt.Root.Position
 	local wtype = WeaponTypes[rt.Stats.WeaponType] or WeaponTypes.Fist
 	local critMult, critKind = 1, nil
@@ -177,6 +180,23 @@ function CombatService.HitEntity(player: Player, rt, e, power: number, motion: n
 	return result
 end
 
+-- Entities that belong to a boss encounter can only be hit by that encounter's participants;
+-- entities owned by a player (sparring partner) only by that player.
+function CombatService.CanHit(rt, e): boolean
+	local root = e.Parent or e
+	-- no attacking world enemies from inside safe zones (hub snipe protection)
+	if rt.Player and rt.Player:GetAttribute("Safe") and root.Encounter == nil and root.Owner == nil and root.Kind ~= "Dummy" then
+		return false
+	end
+	if root.Encounter ~= nil and rt.Encounter ~= root.Encounter then
+		return false
+	end
+	if root.Owner ~= nil and root.Owner ~= rt.Player then
+		return false
+	end
+	return true
+end
+
 local function pvpTargets(rt)
 	local out = {}
 	if not inPvp(rt) then
@@ -210,22 +230,27 @@ local function meleeSweep(player: Player, rt, range: number, arc: number, power:
 	local pos = root.Position
 	local look = root.CFrame.LookVector
 	local candidates = S.EntityService.Near(pos, range + C.MaxReachTolerance, 10)
-	local hits = {}
-	local parents = {}
+	-- one hit per root entity per swing: a weak point (best multiplier) replaces its parent body
+	local best = {} -- [rootEntity] = entity to hit
+	local order = {}
 	for _, e in candidates do
 		local ep = S.EntityService.Position(e)
-		if ep and Geometry.inCone(pos.X, pos.Z, look.X, look.Z, ep.X, ep.Z, range, arc, e.Radius) then
-			table.insert(hits, e)
-			if e.Parent then
-				parents[e.Parent] = true
+		if ep and CombatService.CanHit(rt, e) and Geometry.inCone(pos.X, pos.Z, look.X, look.Z, ep.X, ep.Z, range, arc, e.Radius) then
+			local rootEntity = e.Parent or e
+			local cur = best[rootEntity]
+			if cur == nil then
+				table.insert(order, rootEntity)
+				best[rootEntity] = e
+			elseif e.Parent and (cur == rootEntity or (e.WeakMultiplier or 0) > (cur.WeakMultiplier or 0)) then
+				best[rootEntity] = e
 			end
 		end
 	end
 	local count = 0
-	for _, e in hits do
-		if not parents[e] and count < C.MaxHitsPerSwing then
+	for _, rootEntity in order do
+		if count < C.MaxHitsPerSwing then
 			count += 1
-			CombatService.HitEntity(player, rt, e, power, motion, poise, damageType, statusBase, "Melee")
+			CombatService.HitEntity(player, rt, best[rootEntity], power, motion, poise, damageType, statusBase, "Melee")
 		end
 	end
 	for _, victim in pvpTargets(rt) do
@@ -281,7 +306,9 @@ local function onAttack(player: Player, rt, kind: string, payload)
 	local c = rt.Combat
 	local stats = rt.Stats
 	local t = now()
-	local ok, info = CombatCore.attack(c, kind, stats.WeaponType, t, payload.Charge)
+	-- heavy charge is measured on the server (HeavyStart -> Heavy); client values are ignored
+	local charge = if kind == "Heavy" then CombatCore.takeCharge(c, t) else 0
+	local ok, info = CombatCore.attack(c, kind, stats.WeaponType, t, charge)
 	if not ok then
 		return
 	end
@@ -342,11 +369,13 @@ local function useFlask(player: Player, rt)
 	p.Flask.Charges -= 1
 	c.Cooldowns.Flask = t + GameConfig.Flask.Cooldown
 	c.ActionLockUntil = t + GameConfig.Flask.UseTime
+	-- committed until the heal lands: no dodge-cancelling the drink
+	c.DodgeCancelFrom = t + GameConfig.Flask.UseTime * 0.6
 	c.Blocking = false
 	local amount = math.floor(c.MaxHealth * GameConfig.Flask.HealFraction * (1 + (rt.Stats.Bonuses.HealingPower or 0)))
 	-- heal lands at the end of the drinking animation (punishable, like the genre)
 	task.delay(GameConfig.Flask.UseTime * 0.6, function()
-		if not c.Dead and rt.Combat == c then
+		if not c.Dead and rt.Combat == c and c.LastDodge < t then
 			CombatCore.heal(c, amount)
 			S.PlayerStateService.PushVitals(player)
 			fx:FireClient(player, { Type = "Heal", Amount = amount })
@@ -431,7 +460,7 @@ local function onAbility(player: Player, rt, payload)
 	if def.Type == "ShadowStep" then
 		local entityId = payload.TargetId
 		for _, e in S.EntityService.All() do
-			if e.Id == entityId then
+			if e.Id == entityId and e.Parent == nil and e.Kind ~= "Dummy" and CombatService.CanHit(rt, e) then
 				target = e
 			end
 		end
@@ -467,6 +496,7 @@ local function onAbility(player: Player, rt, payload)
 		local tp = S.EntityService.Position(target)
 		if tp and target.Root then
 			local behind = tp - target.Root.CFrame.LookVector * (target.Radius + 3)
+			S.AntiCheatService.AllowTeleport(player)
 			rt.Character:PivotTo(CFrame.lookAt(Vector3.new(behind.X, rt.Root.Position.Y, behind.Z), Vector3.new(tp.X, rt.Root.Position.Y, tp.Z)))
 			c.CritUntil = t + def.CritDuration
 			fxNear(rt.Root.Position, { Type = "Blink", Position = rt.Root.Position }, 120)
@@ -493,7 +523,8 @@ local function onAbility(player: Player, rt, payload)
 			local amount = Formulas.healAmount(def, attrs, c.MaxHealth, rt.Stats.Bonuses.HealingPower)
 			CombatCore.heal(c, amount)
 			fx:FireClient(player, { Type = "Heal", Amount = amount })
-			for _, plr in Players:GetPlayers() do
+			-- allies = party members (never opponents in the PvP pit)
+			for _, plr in S.PartyService.Members(player) do
 				local ort = S.PlayerStateService.Get(plr)
 				if ort and ort ~= rt and ort.Root and ort.Combat and not ort.Combat.Dead and (ort.Root.Position - pos).Magnitude <= def.AllyRadius then
 					local a = math.floor(ort.Combat.MaxHealth * (amount / c.MaxHealth) * def.AllyFraction)
@@ -553,6 +584,8 @@ local function onAction(player: Player, payload)
 	local kind = payload.Kind
 	if kind == "Light" or kind == "Heavy" then
 		onAttack(player, rt, kind, payload)
+	elseif kind == "HeavyStart" then
+		CombatCore.beginCharge(rt.Combat, workspace:GetServerTimeNow())
 	elseif kind == "Dodge" then
 		onDodge(player, rt, payload)
 	elseif kind == "Parry" then

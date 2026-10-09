@@ -4,7 +4,7 @@ An original dark-fantasy, Soulslike action RPG for Roblox. You explore the Wildl
 
 This repository is a [Rojo](https://rojo.space) project written in Luau. It has no external asset dependencies: the world, characters, bosses, weapons and interface are all built from code using parts, terrain, lighting and particles.
 
-> **Status (honest summary):** the code is complete for all 12 roadmap milestones. It passes 126 offline automated tests and a clean `luau-lsp` type analysis against the Roblox API definitions, and it builds into a place file with Rojo. It has **not yet been run in Roblox Studio**, because the development environment had no Studio access. See [docs/QA_REPORT.md](docs/QA_REPORT.md) for what was verified and [docs/CHECKLIST.md](docs/CHECKLIST.md) for the manual playtests still required.
+> **Status (honest summary):** the code is complete for all 12 roadmap milestones. It passes 127 offline automated tests and a clean `luau-lsp` type analysis against the Roblox API definitions, and it builds into a place file with Rojo. It has **not yet been run in Roblox Studio**, because the development environment had no Studio access. See [docs/QA_REPORT.md](docs/QA_REPORT.md) for what was verified and [docs/CHECKLIST.md](docs/CHECKLIST.md) for the manual playtests still required.
 
 ## Quick start
 

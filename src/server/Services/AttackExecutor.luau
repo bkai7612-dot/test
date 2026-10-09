@@ -147,8 +147,13 @@ local function moveKinematic(attacker, toPos: Vector3, duration: number, arcHeig
 		end
 		task.wait()
 	end
-	if root.Parent then
+	-- a boss that died mid-move stays anchored for its death fade
+	if root.Parent and attacker.Entity and attacker.Entity.Alive then
 		root.Anchored = false
+		-- anchoring resets network ownership; keep AI physics on the server
+		pcall(function()
+			root:SetNetworkOwner(nil)
+		end)
 	end
 end
 
@@ -382,11 +387,33 @@ local function runStep(attacker, step, isFollowUp: boolean, primary: Player?): b
 		local r = attacker.ArenaRadius or 60
 		local cy = Vector3.new(c.X, groundY, c.Z)
 		local zones = {}
-		local base = math.random() * math.pi * 2
-		for i = 1, step.SafeZones or 3 do
-			local ang = base + (i / (step.SafeZones or 3)) * math.pi * 2
-			local dist = r * (0.35 + 0.3 * math.random())
-			table.insert(zones, cy + Vector3.new(math.cos(ang), 0, math.sin(ang)) * dist)
+		local count = step.SafeZones or 3
+		-- seed safe zones near players (one per victim, up to the zone count) so a zone is always
+		-- within sprinting distance; the rest are spread around the arena
+		local victims = attacker.Targets()
+		for i = 1, count do
+			local plr = victims[i]
+			local p = plr and targetPos(plr)
+			local z
+			if p then
+				local ang = math.random() * math.pi * 2
+				z = clampToArena(attacker, Vector3.new(p.X, groundY, p.Z) + Vector3.new(math.cos(ang), 0, math.sin(ang)) * (10 + math.random() * 10))
+			else
+				local ang = (i / count) * math.pi * 2 + math.random()
+				z = cy + Vector3.new(math.cos(ang), 0, math.sin(ang)) * r * (0.35 + 0.3 * math.random())
+			end
+			table.insert(zones, Vector3.new(z.X, groundY, z.Z))
+		end
+		-- guarantee time to reach the nearest zone at sprint speed (24 studs/s) with margin
+		for _, plr in victims do
+			local p = targetPos(plr)
+			if p then
+				local nearest = math.huge
+				for _, z in zones do
+					nearest = math.min(nearest, Vector3.new(p.X - z.X, 0, p.Z - z.Z).Magnitude - step.SafeRadius)
+				end
+				windup = math.max(windup, math.max(0, nearest) / 20 + 0.6)
+			end
 		end
 		S.TelegraphService.Show({ Shape = "Pulse", Center = cy, Radius = r, SafeZones = zones, SafeRadius = step.SafeRadius }, windup)
 		if not waitInterruptible(attacker, windup) then

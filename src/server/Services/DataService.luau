@@ -185,6 +185,14 @@ function DataService.Save(player: Player, release: boolean?): boolean
 	while saving[player] do
 		task.wait(0.1)
 	end
+	-- re-check after waiting: a release may have completed meanwhile, and a late autosave
+	-- must never re-acquire the lock for a player who already left
+	if released[player] or profiles[player] ~= profile then
+		return false
+	end
+	if not release and not player.Parent then
+		return false
+	end
 	saving[player] = true
 	DataService.BeforeSave:Fire(player, profile)
 	profile.LastSaved = os.time()
@@ -258,6 +266,7 @@ function DataService.Start()
 			pending += 1
 			task.spawn(function()
 				DataService.Save(player, true)
+				released[player] = true -- no later autosave may re-lock during shutdown
 				pending -= 1
 			end)
 		end

@@ -198,6 +198,8 @@ function EnemyService.Spawn(enemyId: string, position: Vector3, opts)
 	}
 	ai.Entity = S.EntityService.Register({
 		Kind = if def.Tier == "MiniBoss" then "MiniBoss" else "Enemy",
+		Encounter = opts.Encounter,
+		Owner = opts.Owner,
 		Model = model,
 		Root = root,
 		Name = opts.Name or def.Name,
@@ -222,6 +224,22 @@ function EnemyService.Spawn(enemyId: string, position: Vector3, opts)
 		end,
 	})
 	ai.Attacker.Entity = ai.Entity
+	-- being hit always provokes a reaction: chase the attacker if reachable, otherwise retreat
+	-- home and fully heal (prevents risk-free sniping from beyond aggro/leash range)
+	ai.Entity.OnDamaged = function(_, player)
+		if not player or ai.Dead or ai.Target == player then
+			return
+		end
+		local prt = S.PlayerStateService.Get(player)
+		local reachable = prt ~= nil and prt.Root ~= nil and validTarget(ai, player)
+			and (Vector3.new(prt.Root.Position.X, 0, prt.Root.Position.Z) - Vector3.new(ai.Home.X, 0, ai.Home.Z)).Magnitude <= ai.Leash
+		if reachable then
+			ai.Target = player
+		elseif not ai.Target then
+			ai.State = "Return"
+			ai.ForceReset = true
+		end
+	end
 	model:SetAttribute("Height", height)
 	model:SetAttribute("Tier", def.Tier)
 	ais[ai] = true
@@ -301,6 +319,8 @@ local function think(ai, dt: number)
 	local slow = if t < e.Target.SlowUntil then e.Target.SlowAmount else 0
 	hum.WalkSpeed = ai.Def.WalkSpeed * (1 - slow) * (ai.SpeedMult or 1)
 	if pos.Y < -60 then
+		-- fell out of the world (or was flung): no rewards for anyone
+		ai.NoRewards = true
 		S.EntityService.Kill(e, nil)
 		return
 	end
@@ -316,7 +336,8 @@ local function think(ai, dt: number)
 	local distHome = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(ai.Home.X, 0, ai.Home.Z)).Magnitude
 	if ai.State == "Return" then
 		hum:MoveTo(ai.Home)
-		if distHome < 6 then
+		if distHome < 6 or ai.ForceReset then
+			ai.ForceReset = false
 			ai.State = "Idle"
 			e.Target.Health = e.Target.MaxHealth
 			e.Contributors = {}

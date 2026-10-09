@@ -142,6 +142,9 @@ local function cleanup(run)
 		end
 		run.Players[uid] = nil
 	end
+	if run.ArenaEntity then
+		run.ArenaEntity.Alive = false
+	end
 	if run.Arena then
 		run.Arena:Destroy()
 	end
@@ -328,6 +331,7 @@ local function spawnBoss(run, index: number, count: number)
 	}
 	ctl.Entity = S.EntityService.Register({
 		Kind = "Boss",
+		Encounter = run,
 		Model = model,
 		Root = root,
 		Name = name,
@@ -410,6 +414,7 @@ local function spawnBoss(run, index: number, count: number)
 					Floor = floor,
 					NoRewards = true,
 					Leash = 1e4,
+					Encounter = run,
 					ArenaCenter = run.Origin,
 					ArenaRadius = run.Radius,
 				})
@@ -589,6 +594,9 @@ local function freeSlot(): number?
 end
 
 local function startEncounter(floor: number, group: { Player })
+	if #group == 0 then
+		return false, "NoParticipants"
+	end
 	local slot = freeSlot()
 	if not slot then
 		return false, "TowerBusy"
@@ -653,8 +661,11 @@ local function startEncounter(floor: number, group: { Player })
 		anchor.Parent = run.Arena
 		local amb = def.Mechanics.Ambient
 		local first = run.Bosses[1]
+		-- the arena itself casts ambient hazards: independent of any boss's stagger/death
+		local arenaEntity = { Alive = true, Kind = "Arena", Target = CombatCore.newTarget(1, 1) }
+		run.ArenaEntity = arenaEntity
 		local ambient = {
-			Entity = first.Entity,
+			Entity = arenaEntity,
 			Model = run.Arena,
 			Root = anchor,
 			BaseDamage = first.Attacker.BaseDamage,
@@ -667,8 +678,11 @@ local function startEncounter(floor: number, group: { Player })
 		}
 		task.spawn(function()
 			task.wait(6)
+			local turn = 0
 			while not run.Ended do
-				local victim = participants(run)[1]
+				local list = participants(run)
+				turn += 1
+				local victim = list[(turn - 1) % math.max(1, #list) + 1]
 				pcall(S.AttackExecutor.Run, ambient, amb.Attack, victim)
 				task.wait(amb.Interval)
 			end
@@ -721,10 +735,18 @@ local function startEncounter(floor: number, group: { Player })
 end
 
 function BossService.Start()
+	local lastEnter = {}
 	S.RequestService.Register("EnterFloor", function(player, rt, floor)
 		if rt.Encounter then
 			return false, "AlreadyInside"
 		end
+		if not rt.Combat or rt.Combat.Dead then
+			return false, "Dead"
+		end
+		if os.clock() - (lastEnter[player] or -1e9) < 5 then
+			return false, "TooFast"
+		end
+		lastEnter[player] = os.clock()
 		if not rt.Root or (rt.Root.Position - gatePos()).Magnitude > GameConfig.Party.GatherRadius then
 			return false, "NotAtGate"
 		end
@@ -753,7 +775,13 @@ function BossService.Start()
 				S.NotifyService.Toast(m, "Your party entered the tower without you (gather at the gate to join).", "Warning")
 			end
 		end
+		if not table.find(group, player) then
+			return false, "NoParticipants"
+		end
 		return startEncounter(floor, group)
+	end)
+	game:GetService("Players").PlayerRemoving:Connect(function(p)
+		lastEnter[p] = nil
 	end)
 
 	S.RequestService.Register("LeaveArena", function(player, rt)

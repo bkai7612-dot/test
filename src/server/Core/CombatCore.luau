@@ -160,6 +160,25 @@ function CombatCore.attack(state, kind: string, weaponType: string, now: number,
 	}
 end
 
+-- Heavy charge is timed by the server: begin on press, measured on release.
+function CombatCore.beginCharge(state, now: number): boolean
+	if not CombatCore.canAct(state, now, 0.08) then
+		return false
+	end
+	state.ChargeStart = now
+	return true
+end
+
+-- Seconds charged (0 if no valid charge in progress). Consumes the charge.
+function CombatCore.takeCharge(state, now: number): number
+	local start = state.ChargeStart
+	state.ChargeStart = nil
+	if not start or now < start or now - start > 4 then
+		return 0
+	end
+	return math.min(now - start, C.HeavyChargeMax)
+end
+
 function CombatCore.dodge(state, now: number, costMult: number?)
 	if state.Dead or now < state.StaggeredUntil then
 		return false, "Busy"
@@ -176,6 +195,7 @@ function CombatCore.dodge(state, now: number, costMult: number?)
 	end
 	state.LastDodge = now
 	state.Blocking = false
+	state.ChargeStart = nil
 	state.ActionLockUntil = math.max(now + 0.35, 0)
 	state.LastAttackEnd = NEG
 	return true, { IFrames = C.DodgeIFrames }

@@ -19,7 +19,7 @@ Legend:
 | 9 | Death recovery, advanced equipment, achievements, optional content | ✅ | ✅ (Death, Achievement) | ✅ | ⬜ | Hollow Vale, Ashen Pit PvP, 24 achievements, build presets |
 | 10 | Cosmetic and convenience monetisation | ✅ | ✅ (Receipt) | ✅ | ⬜ | All products disabled until IDs are configured |
 | 11 | Visual/audio polish, accessibility, mobile, performance | ✅ (baseline) | – | ✅ | ⬜ | Atmosphere, telegraph colours, settings, touch/gamepad. Music needs licensed IDs |
-| 12 | Regression, security review, release prep | ✅ | ✅ 126+ tests | ✅ | ⬜ | Independent tester review, see QA_REPORT.md |
+| 12 | Regression, security review, release prep | ✅ | ✅ 127 tests | ✅ | ⬜ | Independent tester review: 14 findings, all addressed (see QA_REPORT.md) |
 
 ## Manual Studio playtests still required
 

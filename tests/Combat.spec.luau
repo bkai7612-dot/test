@@ -46,6 +46,19 @@ return function(t)
 		expect(a.Motion).toBe(b.Motion)
 	end)
 
+	t.it("heavy charge is measured by the server, not the client (QA D5)", function()
+		local s = setup()
+		expect(CombatCore.takeCharge(s, 5)).toBe(0) -- release without a press
+		CombatCore.beginCharge(s, 5)
+		expect(CombatCore.takeCharge(s, 5.4)).toBeNear(0.4)
+		expect(CombatCore.takeCharge(s, 6)).toBe(0) -- consumed
+		CombatCore.beginCharge(s, 10)
+		expect(CombatCore.takeCharge(s, 13)).toBe(C.HeavyChargeMax)
+		CombatCore.beginCharge(s, 20)
+		CombatCore.dodge(s, 20.1)
+		expect(CombatCore.takeCharge(s, 21)).toBe(0) -- dodging cancels a charge
+	end)
+
 	t.it("dodge i-frames avoid hits, including the latency grace window", function()
 		local s, stats = setup()
 		CombatCore.dodge(s, 10)

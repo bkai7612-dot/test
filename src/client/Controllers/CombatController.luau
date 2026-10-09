@@ -66,20 +66,21 @@ function CombatController.HeavyBegin()
 		return
 	end
 	heavyStart = os.clock()
+	send({ Kind = "HeavyStart" })
 end
 
 function CombatController.HeavyEnd()
 	if not heavyStart then
 		return
 	end
-	local charge = os.clock() - (heavyStart :: number)
 	heavyStart = nil
 	if not canAct() then
 		return
 	end
 	local wt = weaponType()
 	lockUntil = os.clock() + wt.Heavy.Windup + wt.Heavy.Recovery * 0.8
-	send({ Kind = "Heavy", Charge = math.min(charge, GameConfig.Combat.HeavyChargeMax), Aim = CameraController.AimDirection() })
+	-- the server measures the charge itself between HeavyStart and Heavy
+	send({ Kind = "Heavy", Aim = CameraController.AimDirection() })
 	AudioController.Play("HeavySwing")
 end
 
