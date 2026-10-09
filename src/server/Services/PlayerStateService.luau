@@ -85,6 +85,7 @@ function PlayerStateService.Sync(player: Player)
 		LostCurrency = p.LostCurrency,
 		ShopPurchases = p.ShopPurchases,
 		BuildPresets = p.BuildPresets,
+		Admin = p.Admin,
 		Derived = rt.Stats,
 		HasWardrobePass = rt.HasWardrobePass == true,
 		ServerTime = workspace:GetServerTimeNow(),
@@ -163,6 +164,7 @@ local function onCharacter(player: Player, character: Model)
 	rt.Stats = Stats.compute(rt.Profile)
 	local now = workspace:GetServerTimeNow()
 	rt.Combat = CombatCore.newPlayerState(rt.Stats, now)
+	rt.Combat.GodMode = rt.Profile.Admin.Granted and rt.Profile.Admin.GodMode
 	-- respawning at a shrine counts as resting there: flask charges refill
 	rt.Profile.Flask.Charges = rt.Profile.Flask.MaxCharges
 	rt.Sprinting = false

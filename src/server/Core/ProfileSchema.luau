@@ -71,6 +71,8 @@ function ProfileSchema.default()
 		ShopPurchases = {},
 		Purchases = { ProcessedReceipts = {}, Products = {} },
 		BuildPresets = {},
+		RedeemedCodes = {},
+		Admin = { Granted = false, GodMode = false },
 		Corrections = {},
 	}
 end

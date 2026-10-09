@@ -69,3 +69,12 @@ All products ship disabled (`Id = 0`) in `src/shared/Config/Products.luau`. To e
 - [ ] Complete the manual playtest list in `docs/CHECKLIST.md`.
 - [ ] Configure product IDs (optional) and test one purchase per product in a private server.
 - [ ] Set the experience's maturity questionnaire, devices (PC, mobile, console) and max players (recommended 12–16).
+
+## 9. Promo and admin codes
+
+- Players redeem codes in **Menu (Tab) → Codes**.
+- Codes are defined in `src/server/Config/PromoCodes.luau`, which is server-only and never sent to clients.
+  - `MaxUses` is a global limit across all servers, enforced atomically with a DataStore counter. In Studio memory mode the counter resets every session.
+  - Each code works once per character.
+- **Admin codes** unlock an admin panel on the Codes tab with: Never Die (toggle), Unlock all, All upgrades, All items and All customisations.
+- Anyone who can read this repository or the `.rbxlx` file can read the codes. Change them before sharing the repository or the place file.

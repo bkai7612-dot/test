@@ -45,6 +45,13 @@ local ERRORS = {
 	NotComplete = "Objectives not yet complete.",
 	TooFar = "You are too far away.",
 	Busy = "You are busy.",
+	InvalidCode = "That code is not valid.",
+	CodeExpired = "That code has expired.",
+	AlreadyRedeemed = "You have already redeemed that code.",
+	CodeUsedUp = "That code has reached its use limit.",
+	TooManyAttempts = "Too many attempts. Wait a minute and try again.",
+	TryAgainLater = "Could not reach the server's code records. Try again shortly.",
+	NotAdmin = "Admin access required.",
 }
 
 function ClientState.Init()

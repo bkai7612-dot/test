@@ -261,7 +261,7 @@ function CombatCore.resolveIncoming(state, hit, hitTime: number, stats, facing: 
 		r.Outcome = "Ignored"
 		return r
 	end
-	if hitTime < state.InvulnerableUntil then
+	if state.GodMode or hitTime < state.InvulnerableUntil then
 		r.Outcome = "Immune"
 		return r
 	end
@@ -319,7 +319,7 @@ function CombatCore.resolveIncoming(state, hit, hitTime: number, stats, facing: 
 end
 
 function CombatCore.applyDamage(state, amount: number): boolean
-	if state.Dead then
+	if state.Dead or state.GodMode then
 		return false
 	end
 	state.Health = math.max(0, state.Health - amount)

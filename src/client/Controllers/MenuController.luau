@@ -51,7 +51,7 @@ local inventoryFilter = "All"
 local classOverlay: Frame? = nil
 local mapDot: Frame? = nil
 
-local MAIN_TABS = { "Character", "Inventory", "Abilities", "Quests", "Map", "Tower", "Party", "Achievements", "Cosmetics", "Settings" }
+local MAIN_TABS = { "Character", "Inventory", "Abilities", "Quests", "Map", "Tower", "Party", "Achievements", "Cosmetics", "Codes", "Settings" }
 
 local function profile()
 	return ClientState.Profile
@@ -623,6 +623,50 @@ Pages.Settings = function(c)
 	UIKit.button("Save settings", function()
 		act("SaveSettings", s, "Settings saved.")
 	end, { Size = UDim2.fromOffset(180, 32), Parent = c })
+end
+
+Pages.Codes = function(c)
+	local p = profile()
+	header(c, "Promo Codes")
+	local r = row(c, 44)
+	local box = UIKit.new("TextBox", {
+		Position = UDim2.fromOffset(8, 6), Size = UDim2.new(1, -150, 0, 32), BackgroundColor3 = T.Bg, TextColor3 = T.Text,
+		PlaceholderText = "Enter a code", PlaceholderColor3 = T.Muted, Font = T.Font, TextSize = 18, Text = "",
+		ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left, Parent = r,
+	}) :: TextBox
+	UIKit.corner(box, 6)
+	UIKit.padding(box, 6)
+	UIKit.button("Redeem", function()
+		local ok, res = ClientState.Request("RedeemCode", box.Text)
+		notifyResult(ok, res, if res == "Admin" then "Admin access granted." else "Code redeemed!")
+		if ok then
+			box.Text = ""
+		end
+	end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(120, 32), Parent = r })
+
+	local admin = p.Admin
+	if not (admin and admin.Granted) then
+		return
+	end
+	header(c, "Admin Panel")
+	UIKit.label("Available because you redeemed an admin code.", { Size = UDim2.new(1, 0, 0, 20), TextSize = 14, TextColor3 = T.Muted, Parent = c })
+	local god = row(c, 40)
+	UIKit.label(("Never Die: %s"):format(if admin.GodMode then "ON" else "OFF"), { Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -150, 1, 0), TextSize = 18, Parent = god })
+	UIKit.button(if admin.GodMode then "Turn off" else "Turn on", function()
+		act("AdminAction", { Action = "GodMode", On = not admin.GodMode })
+	end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(120, 30), Parent = god })
+	for _, entry in {
+		{ "UnlockAll", "Unlock all", "All 20 floors cleared, every shrine, location and ability, max flask charges." },
+		{ "MaxUpgrades", "All upgrades", "Every owned weapon, shield and armour piece to its maximum level." },
+		{ "AllItems", "All items", "One of every weapon, shield, armour piece and accessory, plus full stacks of consumables and materials." },
+		{ "AllCosmetics", "All customisations", "Every aura, weapon finish, dye and title." },
+	} do
+		local er = row(c, 48)
+		UIKit.label(("%s\n%s"):format(entry[2], entry[3]), { Position = UDim2.fromOffset(10, 2), Size = UDim2.new(1, -150, 1, -4), TextSize = 14, Parent = er })
+		UIKit.button("Apply", function()
+			act("AdminAction", { Action = entry[1] })
+		end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(120, 30), Parent = er })
+	end
 end
 
 -- ===================================================================== NPC pages

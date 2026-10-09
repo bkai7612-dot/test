@@ -30,4 +30,9 @@ function Helpers.snapshot(v)
 	return out
 end
 
+function Helpers.owns(profile, itemId)
+	local InventoryCore = require(Core.InventoryCore)
+	return InventoryCore.ownsItemId(profile, itemId)
+end
+
 return Helpers
