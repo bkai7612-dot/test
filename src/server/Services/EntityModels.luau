@@ -322,6 +322,7 @@ function EntityModels.build(name: string, def, kind: string?)
 end
 
 -- Simple swing animation on the "Shoulder" motor: raise during windup, strike on resolve.
+-- Optional motor attributes "Windup"/"Strike" (degrees) override the arcs (jaws, paws).
 function EntityModels.windup(motor: Motor6D?, duration: number)
 	if not motor or not motor.Parent then
 		return
@@ -330,7 +331,7 @@ function EntityModels.windup(motor: Motor6D?, duration: number)
 	local base = shoulder:GetAttribute("BaseC0") or shoulder.C0
 	shoulder:SetAttribute("BaseC0", base)
 	TweenService:Create(shoulder, TweenInfo.new(math.max(0.05, duration * 0.8), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		C0 = base * CFrame.Angles(math.rad(150), 0, 0),
+		C0 = base * CFrame.Angles(math.rad(shoulder:GetAttribute("Windup") or 150), 0, 0),
 	}):Play()
 end
 
@@ -341,7 +342,7 @@ function EntityModels.strike(motor: Motor6D?)
 	local shoulder = motor :: Motor6D
 	local base = shoulder:GetAttribute("BaseC0") or shoulder.C0
 	local t = TweenService:Create(shoulder, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-		C0 = base * CFrame.Angles(math.rad(-40), 0, 0),
+		C0 = base * CFrame.Angles(math.rad(shoulder:GetAttribute("Strike") or -40), 0, 0),
 	})
 	t:Play()
 	task.delay(0.35, function()

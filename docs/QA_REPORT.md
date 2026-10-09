@@ -89,3 +89,20 @@ Defects caught by static analysis:
 ## Manual tests still required
 
 See `docs/CHECKLIST.md` → *Manual Studio playtests still required*. Pay particular attention to D7 (network ownership after dashes) and to the two-server session-lock scenario.
+
+## Update: sculpted boss models and rendering pass
+
+- `BossModels.luau` gives each of the 20 bosses its own model, built from engine primitives with lights, Fire, Smoke and particles. No uploaded assets are used. If a builder errors, it falls back to the old generic model.
+- **Verified offline:** a Roblox math/instance mock built all 21 models (20 bosses plus the second twin). For each model it checked:
+  - every part is welded back to the root;
+  - the swing motor is consistent and not welded shut;
+  - Torso, ArmorPlate and WeakPoint attachments are present;
+  - feet are on the ground;
+  - the Reaper hovers 16 studs up;
+  - at most 4 lights.
+  - Silhouettes were reviewed in an offline preview: `docs/boss_models_preview.png`.
+- **Rendering pass:**
+  - PBR environment reflections, crisper shadows, depth of field (turned off by Reduced Effects), volumetric clouds and reflective water.
+  - Bloom tuned so neon glows.
+- **NOT verified in Studio:**
+  - In-engine look, wedge orientation on spikes, and server performance with ~60–170 parts per boss.

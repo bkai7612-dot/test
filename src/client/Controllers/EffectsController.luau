@@ -153,7 +153,7 @@ end
 function EffectsController.ApplySettings(s)
 	local reduced = s.ReducedEffects == true
 	for _, e in Lighting:GetChildren() do
-		if e:IsA("BloomEffect") or e:IsA("SunRaysEffect") then
+		if e:IsA("BloomEffect") or e:IsA("SunRaysEffect") or e:IsA("DepthOfFieldEffect") then
 			e.Enabled = not reduced
 		end
 	end

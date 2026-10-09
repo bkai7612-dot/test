@@ -27,7 +27,7 @@ local EncounterCore = require(Core.EncounterCore)
 local BossBrain = require(Core.BossBrain)
 local CombatCore = require(Core.CombatCore)
 local AchievementCore = require(Core.AchievementCore)
-local EntityModels = require(script.Parent.EntityModels)
+local BossModels = require(script.Parent.BossModels)
 
 local BossService = {}
 local S
@@ -307,7 +307,7 @@ local function spawnBoss(run, index: number, count: number)
 	if count > 1 then
 		name = def.Name .. (if index == 1 then " (Judge)" else " (Sentence)")
 	end
-	local model, root, humanoid, radius, _height, shoulder = EntityModels.build(name, def.Model, "Boss")
+	local model, root, humanoid, radius, _height, shoulder = BossModels.build(def, index, name)
 	local offset = if count > 1 then Vector3.new((index - 1.5) * 24, 0, 0) else Vector3.zero
 	local spawnPos = run.Origin + Vector3.new(0, 0, -run.Radius * 0.45) + offset
 	model:PivotTo(CFrame.lookAt(spawnPos + Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2, 0), run.Origin + Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2, 0)))
@@ -447,7 +447,8 @@ local function spawnBoss(run, index: number, count: number)
 			wp.CanQuery = false
 			wp.Massless = true
 			local anchor = torso or root
-			wp.CFrame = anchor.CFrame * CFrame.new((i == 1 and 1 or -1) * 2.2, 1.5, 2 + i * 2)
+			local spot = anchor:FindFirstChild("WeakPoint" .. i)
+			wp.CFrame = if spot and spot:IsA("Attachment") then spot.WorldCFrame else anchor.CFrame * CFrame.new((i == 1 and 1 or -1) * 2.2, 1.5, 2 + i * 2)
 			local w = Instance.new("WeldConstraint")
 			w.Part0 = anchor
 			w.Part1 = wp

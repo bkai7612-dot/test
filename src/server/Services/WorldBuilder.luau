@@ -135,14 +135,43 @@ local function buildLighting()
 	cc.TintColor = Color3.fromRGB(240, 232, 225)
 	cc.Parent = Lighting
 	local bloom = Instance.new("BloomEffect")
-	bloom.Intensity = 0.6
-	bloom.Size = 30
-	bloom.Threshold = 1.6
+	bloom.Intensity = 0.7
+	bloom.Size = 28
+	bloom.Threshold = 1.35 -- lets neon runes, embers and eyes glow without blooming the sky
 	bloom.Parent = Lighting
 	local rays = Instance.new("SunRaysEffect")
 	rays.Intensity = 0.06
 	rays.Spread = 0.6
 	rays.Parent = Lighting
+	-- physically based reflections (metal, gold, glass read properly) and crisper shadows
+	Lighting.EnvironmentDiffuseScale = 1
+	Lighting.EnvironmentSpecularScale = 1
+	Lighting.ShadowSoftness = 0.12
+	Lighting.GlobalShadows = true
+	-- subtle distance blur for depth; disabled with Reduced Effects
+	local dof = Instance.new("DepthOfFieldEffect")
+	dof.FarIntensity = 0.12
+	dof.FocusDistance = 80
+	dof.InFocusRadius = 120
+	dof.NearIntensity = 0
+	dof.Parent = Lighting
+	local sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
+	sky.SunAngularSize = 12
+	sky.MoonAngularSize = 9
+	sky.StarCount = 3000
+	sky.Parent = Lighting
+	-- volumetric clouds and nicer water
+	local terrain = workspace.Terrain
+	local clouds = terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
+	clouds.Cover = 0.55
+	clouds.Density = 0.45
+	clouds.Color = Color3.fromRGB(235, 230, 235)
+	clouds.Parent = terrain
+	terrain.WaterColor = Color3.fromRGB(40, 70, 75)
+	terrain.WaterReflectance = 0.6
+	terrain.WaterTransparency = 0.55
+	terrain.WaterWaveSize = 0.12
+	terrain.WaterWaveSpeed = 8
 end
 
 -- ===================================================================== terrain
