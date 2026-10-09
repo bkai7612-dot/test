@@ -122,9 +122,28 @@ local function acquire(player: Player)
 	return false, "lock"
 end
 
+-- Clears our session lock without writing data (player left while loading).
+local function releaseLockOnly(player: Player)
+	if memoryMode or not store then
+		return
+	end
+	pcall(function()
+		(store :: DataStore):UpdateAsync(keyFor(player), function(old)
+			if old and old.Lock and old.Lock.JobId == jobId then
+				old.Lock = nil
+				return old
+			end
+			return nil
+		end)
+	end)
+end
+
 function DataService.Load(player: Player)
 	local ok, raw = acquire(player)
 	if not player.Parent then
+		if ok then
+			releaseLockOnly(player)
+		end
 		return nil
 	end
 	if not ok then
