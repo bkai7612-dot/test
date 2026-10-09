@@ -67,15 +67,22 @@ local function inPvp(rt): boolean
 	return rt.Region == "pvp"
 end
 
-local function playSlash(rt, heavy: boolean)
-	local char = rt.Character
-	local tool = char and char:FindFirstChildOfClass("Tool")
-	if tool then
-		local anim = Instance.new("StringValue")
-		anim.Name = "toolanim"
-		anim.Value = if heavy then "Lunge" else "Slash"
-		anim.Parent = tool
-		game:GetService("Debris"):AddItem(anim, 0.5)
+-- Tells every OTHER nearby client to play an animation on this player's character
+-- (the acting client already played it locally the moment the button was pressed).
+local function broadcastAnim(player: Player, rt, payload)
+	if not rt.Root then
+		return
+	end
+	payload.Type = "Anim"
+	payload.UserId = player.UserId
+	local pos = rt.Root.Position
+	for _, plr in Players:GetPlayers() do
+		if plr ~= player then
+			local ort = S.PlayerStateService.Get(plr)
+			if ort and ort.Root and (ort.Root.Position - pos).Magnitude <= 180 then
+				fx:FireClient(plr, payload)
+			end
+		end
 	end
 end
 
@@ -313,7 +320,7 @@ local function onAttack(player: Player, rt, kind: string, payload)
 		return
 	end
 	local seq = c.AttackSeq or 0
-	playSlash(rt, kind == "Heavy")
+	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = stats.WeaponType, Windup = info.Windup, Recovery = info.Recovery })
 	local aim = payload.Aim
 	task.delay(info.Windup, function()
 		if c.Dead or (c.AttackSeq or 0) ~= seq or not rt.Root or not rt.Root.Parent then
@@ -335,6 +342,7 @@ local function onDodge(player: Player, rt, payload)
 	local ok, info = CombatCore.dodge(rt.Combat, now(), rt.Stats.DodgeCostMult)
 	if ok then
 		AchievementCore.increment(rt.Profile, "Dodges")
+		broadcastAnim(player, rt, { Anim = "Dodge" })
 		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames })
 	else
 		fx:FireClient(player, { Type = "ActionDenied", Action = "Dodge", Reason = info })
@@ -344,7 +352,7 @@ end
 local function onParry(player: Player, rt)
 	local ok = CombatCore.parry(rt.Combat, now(), rt.Stats.ParryBonus)
 	if ok then
-		playSlash(rt, false)
+		broadcastAnim(player, rt, { Anim = "Parry", WeaponType = rt.Stats.WeaponType })
 	end
 end
 
@@ -367,6 +375,7 @@ local function useFlask(player: Player, rt)
 		return
 	end
 	p.Flask.Charges -= 1
+	broadcastAnim(player, rt, { Anim = "Flask" })
 	c.Cooldowns.Flask = t + GameConfig.Flask.Cooldown
 	c.ActionLockUntil = t + GameConfig.Flask.UseTime
 	-- committed until the heal lands: no dodge-cancelling the drink
@@ -480,7 +489,7 @@ local function onAbility(player: Player, rt, payload)
 	c.DodgeCancelFrom = t + windup
 	c.Blocking = false
 	fx:FireClient(player, { Type = "AbilityCast", Ability = id, Windup = windup, Cooldown = def.Cooldown })
-	playSlash(rt, true)
+	broadcastAnim(player, rt, { Anim = "Cast", Windup = windup })
 	local seq = c.AttackSeq or 0
 	local attrs = rt.Stats.Attributes
 	local power = Formulas.abilityPower(def, attrs, rt.Profile.Level)

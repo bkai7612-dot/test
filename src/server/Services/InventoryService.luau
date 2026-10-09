@@ -22,29 +22,33 @@ function InventoryService.Init(services)
 	S = services
 end
 
--- Rebuilds the held weapon Tool to match the equipped weapon and weapon skin.
+-- Rebuilds the held weapon / shield visuals to match equipment and weapon skin.
 function InventoryService.ApplyWeaponVisual(player: Player)
 	local rt = S.PlayerStateService.Get(player)
-	if not rt or not rt.Character or not rt.Humanoid then
+	local character = rt and rt.Character
+	if not character or not character.Parent then
 		return
 	end
-	for _, child in rt.Character:GetChildren() do
+	-- wait briefly for the body to exist (appearance can still be loading on spawn)
+	if not (character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")) then
+		character:WaitForChild("RightHand", 3)
+	end
+	if rt.Character ~= character then
+		return
+	end
+	-- remove any legacy Tools
+	for _, child in character:GetChildren() do
 		if child:IsA("Tool") then
 			child:Destroy()
 		end
 	end
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	if backpack then
-		backpack:ClearAllChildren()
+	local function itemOf(slot)
+		local uid = rt.Profile.Equipped[slot]
+		local inst = uid and rt.Profile.Inventory.Items[uid]
+		return inst and inst.Id
 	end
-	local uid = rt.Profile.Equipped.Weapon
-	local inst = uid and rt.Profile.Inventory.Items[uid]
 	local skin = rt.Profile.Cosmetics.Equipped.WeaponSkin
-	local tool = EntityModels.buildWeaponTool(inst and inst.Id, if skin ~= "" then skin else nil)
-	if tool then
-		tool.Parent = backpack or rt.Character
-		rt.Humanoid:EquipTool(tool)
-	end
+	EntityModels.attachHeldGear(character, itemOf("Weapon"), if skin ~= "" then skin else nil, itemOf("Offhand"))
 end
 
 local function canChangeGear(rt): (boolean, string?)

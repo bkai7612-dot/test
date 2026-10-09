@@ -20,7 +20,10 @@ local CombatController = {}
 
 local player = Players.LocalPlayer
 local actionRemote: RemoteEvent
-local CameraController, ClientState, AudioController
+local CameraController, ClientState, AudioController, AnimationController
+local Abilities = require(Shared.Config.Abilities)
+local combo = 0
+local lastLightEnd = 0
 local lockUntil = 0
 local heavyStart: number? = nil
 local lastDodge = 0
@@ -30,6 +33,7 @@ function CombatController.Init(deps)
 	CameraController = deps.CameraController
 	ClientState = deps.ClientState
 	AudioController = deps.AudioController
+	AnimationController = deps.AnimationController
 	actionRemote = Net.event("Action")
 end
 
@@ -57,6 +61,15 @@ function CombatController.Light()
 	end
 	local wt = weaponType()
 	lockUntil = os.clock() + wt.Light.Windup + wt.Light.Recovery * 0.8
+	-- mirror the server's combo rule so the local swing matches what others see
+	if os.clock() - lastLightEnd <= 0.7 and combo > 0 then
+		combo = combo % #wt.Light.Motion + 1
+	else
+		combo = 1
+	end
+	lastLightEnd = lockUntil
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = wtName, Windup = wt.Light.Windup, Recovery = wt.Light.Recovery })
 	send({ Kind = "Light", Aim = CameraController.AimDirection() })
 	AudioController.Play("Swing")
 end
@@ -79,6 +92,9 @@ function CombatController.HeavyEnd()
 	end
 	local wt = weaponType()
 	lockUntil = os.clock() + wt.Heavy.Windup + wt.Heavy.Recovery * 0.8
+	combo = 0
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = wtName, Windup = wt.Heavy.Windup, Recovery = wt.Heavy.Recovery })
 	-- the server measures the charge itself between HeavyStart and Heavy
 	send({ Kind = "Heavy", Aim = CameraController.AimDirection() })
 	AudioController.Play("HeavySwing")
@@ -100,7 +116,9 @@ function CombatController.Dodge()
 	end
 	lastDodge = os.clock()
 	lockUntil = os.clock() + 0.35
+	combo = 0
 	send({ Kind = "Dodge" })
+	AnimationController.PlayLocal({ Anim = "Dodge" })
 	-- local dash (character physics are client-owned)
 	local dir = hum.MoveDirection
 	if dir.Magnitude < 0.1 then
@@ -154,6 +172,8 @@ function CombatController.Parry()
 	end
 	lockUntil = os.clock() + 0.4
 	send({ Kind = "Parry" })
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Parry", WeaponType = wtName })
 end
 
 function CombatController.SetSprint(on: boolean)
@@ -165,6 +185,11 @@ function CombatController.Ability(slot: string)
 		return
 	end
 	send({ Kind = "Ability", Slot = slot, Aim = CameraController.AimDirection(), TargetId = CameraController.TargetEntityId() })
+	local p = ClientState.Profile
+	local def = p and Abilities[p.Abilities[slot]]
+	if def and def.Type ~= "ShadowStep" then
+		AnimationController.PlayLocal({ Anim = "Cast", Windup = def.Windup or 0.2 })
+	end
 end
 
 function CombatController.Flask()
@@ -173,6 +198,9 @@ function CombatController.Flask()
 	end
 	lockUntil = os.clock() + GameConfig.Flask.UseTime
 	send({ Kind = "Flask" })
+	if (player:GetAttribute("FlaskCharges") or 0) > 0 then
+		AnimationController.PlayLocal({ Anim = "Flask" })
+	end
 	AudioController.Play("Drink")
 end
 
@@ -190,6 +218,8 @@ end
 -- Server says we were staggered: drop local locks/charge
 function CombatController.OnStaggered(duration: number)
 	heavyStart = nil
+	combo = 0
+	AnimationController.PlayLocal({ Anim = "Hurt" })
 	lockUntil = os.clock() + duration
 end
 

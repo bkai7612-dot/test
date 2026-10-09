@@ -7672,15 +7672,22 @@ local function inPvp(rt): boolean
 	return rt.Region == "pvp"
 end
 
-local function playSlash(rt, heavy: boolean)
-	local char = rt.Character
-	local tool = char and char:FindFirstChildOfClass("Tool")
-	if tool then
-		local anim = Instance.new("StringValue")
-		anim.Name = "toolanim"
-		anim.Value = if heavy then "Lunge" else "Slash"
-		anim.Parent = tool
-		game:GetService("Debris"):AddItem(anim, 0.5)
+-- Tells every OTHER nearby client to play an animation on this player's character
+-- (the acting client already played it locally the moment the button was pressed).
+local function broadcastAnim(player: Player, rt, payload)
+	if not rt.Root then
+		return
+	end
+	payload.Type = "Anim"
+	payload.UserId = player.UserId
+	local pos = rt.Root.Position
+	for _, plr in Players:GetPlayers() do
+		if plr ~= player then
+			local ort = S.PlayerStateService.Get(plr)
+			if ort and ort.Root and (ort.Root.Position - pos).Magnitude <= 180 then
+				fx:FireClient(plr, payload)
+			end
+		end
 	end
 end
 
@@ -7918,7 +7925,7 @@ local function onAttack(player: Player, rt, kind: string, payload)
 		return
 	end
 	local seq = c.AttackSeq or 0
-	playSlash(rt, kind == "Heavy")
+	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = stats.WeaponType, Windup = info.Windup, Recovery = info.Recovery })
 	local aim = payload.Aim
 	task.delay(info.Windup, function()
 		if c.Dead or (c.AttackSeq or 0) ~= seq or not rt.Root or not rt.Root.Parent then
@@ -7940,6 +7947,7 @@ local function onDodge(player: Player, rt, payload)
 	local ok, info = CombatCore.dodge(rt.Combat, now(), rt.Stats.DodgeCostMult)
 	if ok then
 		AchievementCore.increment(rt.Profile, "Dodges")
+		broadcastAnim(player, rt, { Anim = "Dodge" })
 		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames })
 	else
 		fx:FireClient(player, { Type = "ActionDenied", Action = "Dodge", Reason = info })
@@ -7949,7 +7957,7 @@ end
 local function onParry(player: Player, rt)
 	local ok = CombatCore.parry(rt.Combat, now(), rt.Stats.ParryBonus)
 	if ok then
-		playSlash(rt, false)
+		broadcastAnim(player, rt, { Anim = "Parry", WeaponType = rt.Stats.WeaponType })
 	end
 end
 
@@ -7972,6 +7980,7 @@ local function useFlask(player: Player, rt)
 		return
 	end
 	p.Flask.Charges -= 1
+	broadcastAnim(player, rt, { Anim = "Flask" })
 	c.Cooldowns.Flask = t + GameConfig.Flask.Cooldown
 	c.ActionLockUntil = t + GameConfig.Flask.UseTime
 	-- committed until the heal lands: no dodge-cancelling the drink
@@ -8085,7 +8094,7 @@ local function onAbility(player: Player, rt, payload)
 	c.DodgeCancelFrom = t + windup
 	c.Blocking = false
 	fx:FireClient(player, { Type = "AbilityCast", Ability = id, Windup = windup, Cooldown = def.Cooldown })
-	playSlash(rt, true)
+	broadcastAnim(player, rt, { Anim = "Cast", Windup = windup })
 	local seq = c.AttackSeq or 0
 	local attrs = rt.Stats.Attributes
 	local power = Formulas.abilityPower(def, attrs, rt.Profile.Level)
@@ -9836,86 +9845,135 @@ function EntityModels.strike(motor: Motor6D?)
 	end)
 end
 
--- Player weapon as a Tool (gives the default character animations a held item and a slash anim).
-function EntityModels.buildWeaponTool(itemId: string?, skinId: string?): Tool?
-	local def = itemId and Items[itemId]
-	if not def then
-		return nil
+-- ===================================================================== player held gear
+-- Weapons are welded straight to the hand (no Tool), so orientation is exact and nothing
+-- depends on Roblox's tool-grip behaviour. Grip space: origin at the hand, the blade
+-- extends along -Z (forward when the arm hangs; upward when the arm is raised to strike).
+
+local function gearPart(model: Model, name: string, size: Vector3, color: Color3, material: Enum.Material, shape: Enum.PartType?): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = color
+	p.Material = material
+	if shape then
+		p.Shape = shape
 	end
-	local tool = Instance.new("Tool")
-	tool.Name = def.Name
-	tool.CanBeDropped = false
-	tool.RequiresHandle = true
-	tool.ManualActivationOnly = true
-	tool:SetAttribute("ItemId", itemId)
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Massless = true
+	p.CastShadow = false
+	p.Parent = model
+	return p
+end
+
+local function gripWeld(hand: BasePart, part: BasePart, grip: CFrame, offset: CFrame)
+	local w = Instance.new("Weld")
+	w.Part0 = hand
+	w.Part1 = part
+	w.C0 = grip * offset
+	w.Parent = part
+end
+
+local function handGrip(character: Model, side: string): (BasePart?, CFrame)
+	local r15 = character:FindFirstChild(side .. "Hand")
+	if r15 and r15:IsA("BasePart") then
+		return r15, CFrame.new(0, -r15.Size.Y / 2 + 0.05, 0)
+	end
+	local r6 = character:FindFirstChild(side .. " Arm")
+	if r6 and r6:IsA("BasePart") then
+		return r6, CFrame.new(0, -r6.Size.Y / 2 + 0.1, 0)
+	end
+	return nil, CFrame.new()
+end
+
+-- Returns { {name, size, offset(CFrame in grip space), role} } for a weapon type.
+local function weaponLayout(def)
 	local wtype = def.WeaponType
-	local skin = skinId and Cosmetics[skinId]
-	local color = skin and skin.Color or def.Color or Color3.fromRGB(160, 160, 165)
-	local material = skin and Enum.Material[skin.Material] or Enum.Material.Metal
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.CanCollide = false
-	handle.Massless = true
-	handle.CanQuery = false
-	handle.Color = Color3.fromRGB(60, 45, 35)
-	handle.Material = Enum.Material.Wood
-	handle.Size = Vector3.new(0.3, 1.2, 0.3)
-	handle.Parent = tool
-	local length, width, thick = 4, 0.4, 0.15
-	if wtype == "Greatsword" then
-		length, width = 6, 0.8
-	elseif wtype == "Dagger" then
-		length, width = 1.8, 0.3
+	local L = {}
+	local function add(name, size, offset, role, shape)
+		table.insert(L, { Name = name, Size = size, Offset = offset, Role = role, Shape = shape })
+	end
+	if wtype == "Sword" or wtype == "Greatsword" or wtype == "Dagger" then
+		local length = if wtype == "Greatsword" then 5.5 elseif wtype == "Dagger" then 1.6 else 3.6
+		local width = if wtype == "Greatsword" then 0.7 elseif wtype == "Dagger" then 0.28 else 0.38
+		add("Grip", Vector3.new(0.28, 0.28, if wtype == "Greatsword" then 1.4 else 0.9), CFrame.new(0, 0, 0.1), "Wood")
+		add("Guard", Vector3.new(0.3, width * 2 + 0.5, 0.25), CFrame.new(0, 0, -0.45), "Trim")
+		add("Blade", Vector3.new(0.12, width, length), CFrame.new(0, 0, -0.55 - length / 2), "Metal")
 	elseif wtype == "Axe" then
-		length, width = 3, 0.3
+		add("Haft", Vector3.new(0.28, 0.28, 3.2), CFrame.new(0, 0, -1.1), "Wood")
+		add("Head", Vector3.new(0.2, 1.3, 1.1), CFrame.new(0, 0.6, -2.3), "Metal")
 	elseif wtype == "Hammer" then
-		length, width = 3.2, 0.35
+		add("Haft", Vector3.new(0.3, 0.3, 3.4), CFrame.new(0, 0, -1.2), "Wood")
+		add("Head", Vector3.new(1.3, 1.3, 1.6), CFrame.new(0, 0, -3.0), "Metal")
 	elseif wtype == "Spear" then
-		length, width = 7, 0.25
-	elseif wtype == "Staff" or wtype == "Seal" then
-		length, width = if wtype == "Staff" then 5 else 1.2, 0.3
+		add("Shaft", Vector3.new(0.25, 0.25, 7), CFrame.new(0, 0, -1.5), "Wood")
+		add("Tip", Vector3.new(0.12, 0.45, 1.2), CFrame.new(0, 0, -5.6), "Metal")
 	elseif wtype == "Bow" then
-		length, width = 4, 0.25
+		add("Limb", Vector3.new(0.22, 0.22, 4.6), CFrame.new(0, 0, -0.2), "Wood")
+		add("String", Vector3.new(0.04, 0.04, 4.4), CFrame.new(0, 0.55, -0.2), "String")
+	elseif wtype == "Staff" then
+		add("Shaft", Vector3.new(0.26, 0.26, 5.2), CFrame.new(0, 0, -1.6), "Wood")
+		add("Gem", Vector3.new(0.75, 0.75, 0.75), CFrame.new(0, 0, -4.4), "Gem", Enum.PartType.Ball)
+	elseif wtype == "Seal" then
+		add("Seal", Vector3.new(0.18, 1, 1), CFrame.new(0, 0, -0.55) * CFrame.Angles(0, 0, 0), "Trim", Enum.PartType.Cylinder)
+		add("Gem", Vector3.new(0.45, 0.45, 0.45), CFrame.new(-0.1, 0, -0.55), "Gem", Enum.PartType.Ball)
 	end
-	local blade = Instance.new("Part")
-	blade.Name = "Blade"
-	blade.CanCollide = false
-	blade.Massless = true
-	blade.CanQuery = false
-	blade.Size = Vector3.new(thick, length, width)
-	blade.Color = color
-	blade.Material = material
-	blade.CFrame = handle.CFrame * CFrame.new(0, 0.6 + length / 2, 0)
-	blade.Parent = tool
-	weld(handle, blade)
-	if wtype == "Axe" or wtype == "Hammer" then
-		local head = Instance.new("Part")
-		head.Name = "WeaponHead"
-		head.CanCollide = false
-		head.Massless = true
-		head.CanQuery = false
-		head.Size = if wtype == "Axe" then Vector3.new(0.25, 1.2, 1.4) else Vector3.new(1.2, 1.2, 1.8)
-		head.Color = color
-		head.Material = material
-		head.CFrame = blade.CFrame * CFrame.new(0, length / 2 - 0.5, if wtype == "Axe" then 0.6 else 0)
-		head.Parent = tool
-		weld(blade, head)
-	elseif wtype == "Staff" or wtype == "Seal" then
-		local gem = Instance.new("Part")
-		gem.Name = "Gem"
-		gem.Shape = Enum.PartType.Ball
-		gem.CanCollide = false
-		gem.Massless = true
-		gem.CanQuery = false
-		gem.Size = Vector3.new(0.7, 0.7, 0.7)
-		gem.Material = Enum.Material.Neon
-		gem.Color = if def.DamageType == "Holy" then Color3.fromRGB(255, 230, 150) else Color3.fromRGB(120, 150, 255)
-		gem.CFrame = blade.CFrame * CFrame.new(0, length / 2 + 0.3, 0)
-		gem.Parent = tool
-		weld(blade, gem)
+	return L
+end
+
+-- Attaches the equipped weapon (right hand) and shield (left hand) to a character.
+function EntityModels.attachHeldGear(character: Model, weaponId: string?, skinId: string?, offhandId: string?)
+	local old = character:FindFirstChild("HeldGear")
+	if old then
+		old:Destroy()
 	end
-	tool.Grip = CFrame.new(0, -0.3, 0)
-	return tool
+	local gear = Instance.new("Model")
+	gear.Name = "HeldGear"
+	local skin = skinId and Cosmetics[skinId]
+	local wdef = weaponId and Items[weaponId]
+	local right, rgrip = handGrip(character, "Right")
+	rgrip *= CFrame.Angles(math.rad(15), 0, 0) -- carry the weapon slightly raised
+	if wdef and right then
+		local metal = skin and skin.Color or wdef.Color or Color3.fromRGB(175, 175, 182)
+		local metalMat = skin and Enum.Material[skin.Material] or Enum.Material.Metal
+		local trim = Color3.fromRGB(150, 120, 60)
+		local gem = if wdef.DamageType == "Holy" then Color3.fromRGB(255, 230, 150)
+			elseif wdef.DamageType == "Fire" then Color3.fromRGB(255, 130, 50)
+			else Color3.fromRGB(120, 150, 255)
+		for _, spec in weaponLayout(wdef) do
+			local color, mat = metal, metalMat
+			if spec.Role == "Wood" then
+				color, mat = Color3.fromRGB(70, 50, 36), Enum.Material.Wood
+			elseif spec.Role == "Trim" then
+				color, mat = trim, Enum.Material.Metal
+			elseif spec.Role == "Gem" then
+				color, mat = gem, Enum.Material.Neon
+			elseif spec.Role == "String" then
+				color, mat = Color3.fromRGB(220, 215, 200), Enum.Material.Fabric
+			end
+			local p = gearPart(gear, spec.Name, spec.Size, color, mat, spec.Shape)
+			p.CFrame = right.CFrame * rgrip * spec.Offset
+			gripWeld(right, p, rgrip, spec.Offset)
+		end
+		gear:SetAttribute("WeaponType", wdef.WeaponType)
+	end
+	local odef = offhandId and Items[offhandId]
+	local left, lgrip = handGrip(character, "Left")
+	if odef and odef.Kind == "Shield" and left then
+		local size = if odef.Stability >= 90 then Vector3.new(2.6, 3.4, 0.25) elseif odef.Stability <= 60 then Vector3.new(1.8, 1.8, 0.25) else Vector3.new(2.2, 2.8, 0.25)
+		local offset = CFrame.new(0, 0.6, -0.35)
+		local plate = gearPart(gear, "Shield", size, Color3.fromRGB(105, 100, 105), Enum.Material.Metal)
+		plate.CFrame = left.CFrame * lgrip * offset
+		gripWeld(left, plate, lgrip, offset)
+		local boss = gearPart(gear, "ShieldBoss", Vector3.new(0.6, 0.6, 0.3), Color3.fromRGB(170, 140, 70), Enum.Material.Metal)
+		local bossOffset = offset * CFrame.new(0, 0, -0.2)
+		boss.CFrame = left.CFrame * lgrip * bossOffset
+		gripWeld(left, boss, lgrip, bossOffset)
+	end
+	gear.Parent = character
+	return gear
 end
 
 return EntityModels
@@ -10416,29 +10474,33 @@ function InventoryService.Init(services)
 	S = services
 end
 
--- Rebuilds the held weapon Tool to match the equipped weapon and weapon skin.
+-- Rebuilds the held weapon / shield visuals to match equipment and weapon skin.
 function InventoryService.ApplyWeaponVisual(player: Player)
 	local rt = S.PlayerStateService.Get(player)
-	if not rt or not rt.Character or not rt.Humanoid then
+	local character = rt and rt.Character
+	if not character or not character.Parent then
 		return
 	end
-	for _, child in rt.Character:GetChildren() do
+	-- wait briefly for the body to exist (appearance can still be loading on spawn)
+	if not (character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")) then
+		character:WaitForChild("RightHand", 3)
+	end
+	if rt.Character ~= character then
+		return
+	end
+	-- remove any legacy Tools
+	for _, child in character:GetChildren() do
 		if child:IsA("Tool") then
 			child:Destroy()
 		end
 	end
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	if backpack then
-		backpack:ClearAllChildren()
+	local function itemOf(slot)
+		local uid = rt.Profile.Equipped[slot]
+		local inst = uid and rt.Profile.Inventory.Items[uid]
+		return inst and inst.Id
 	end
-	local uid = rt.Profile.Equipped.Weapon
-	local inst = uid and rt.Profile.Inventory.Items[uid]
 	local skin = rt.Profile.Cosmetics.Equipped.WeaponSkin
-	local tool = EntityModels.buildWeaponTool(inst and inst.Id, if skin ~= "" then skin else nil)
-	if tool then
-		tool.Parent = backpack or rt.Character
-		rt.Humanoid:EquipTool(tool)
-	end
+	EntityModels.attachHeldGear(character, itemOf("Weapon"), if skin ~= "" then skin else nil, itemOf("Offhand"))
 end
 
 local function canChangeGear(rt): (boolean, string?)
@@ -11378,6 +11440,7 @@ function ProgressionService.Start()
 		end
 		S.PlayerStateService.RecomputeStats(player)
 		S.PlayerStateService.FullRestore(player)
+		S.InventoryService.ApplyWeaponVisual(player) -- show the starting weapon immediately
 		S.CosmeticService.Refresh(player)
 		S.PlayerStateService.Sync(player)
 		S.DataService.Save(player)
@@ -15497,6 +15560,291 @@ end
           </Properties>
           <Item class="ModuleScript" referent="112">
             <Properties>
+              <string name="Name">AnimationController</string>
+              <string name="Source"><![CDATA[--[[
+	AnimationController
+	Procedural combat animations for player characters, built from keyframed joint poses
+	(no uploaded animation assets needed). It drives the shoulder, waist and root Motor6D C0s
+	on top of Roblox's default walk/idle animations, works for R15 and R6, and runs on every
+	client: your own swings play instantly; other players' swings arrive as "Anim" Fx events.
+
+	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flask,
+	Cast (abilities), Hurt (flinch), plus a held Block guard while the Blocking attribute is set.
+
+	Pose values are degrees (x, y, z) applied in the parent part's space at the joint pivot:
+	  shoulder  x>0 raises the arm forward (90 = straight ahead, 180 = overhead)
+	            z>0 swings the RIGHT arm outward (left arm: inward)
+	  waist     x<0 leans forward, y twists the torso
+	  root      x rotates the whole body (used for the roll)
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local AnimationController = {}
+
+local JOINT_NAMES = {
+	R = { "RightShoulder", "Right Shoulder" },
+	L = { "LeftShoulder", "Left Shoulder" },
+	W = { "Waist" },
+	Root = { "Root", "RootJoint" },
+}
+
+type Pose = { [string]: { number } } -- joint -> { rx, ry, rz, px, py, pz }
+type Frame = { T: number, Pose: Pose }
+
+local rigs = {} -- [Model] = { Motors = { [joint] = Motor6D }, Base = { [joint] = CFrame } }
+local playing = {} -- [Model] = { Frames, Start, Duration }
+local holding = {} -- [Model] = Pose (block guard)
+
+-- ===================================================================== rig access
+local function rigFor(character: Model)
+	local rig = rigs[character]
+	if rig then
+		return rig
+	end
+	rig = { Motors = {}, Base = {} }
+	for joint, names in JOINT_NAMES do
+		for _, name in names do
+			local m = character:FindFirstChild(name, true)
+			if m and m:IsA("Motor6D") then
+				rig.Motors[joint] = m
+				rig.Base[joint] = m.C0
+				break
+			end
+		end
+	end
+	rigs[character] = rig
+	character.AncestryChanged:Connect(function()
+		if not character.Parent then
+			rigs[character] = nil
+			playing[character] = nil
+			holding[character] = nil
+		end
+	end)
+	return rig
+end
+
+local function applyPose(character: Model, pose: Pose?)
+	local rig = rigFor(character)
+	for joint, motor in rig.Motors do
+		local base = rig.Base[joint]
+		local v = pose and pose[joint]
+		if v and motor.Parent then
+			local rot = CFrame.Angles(math.rad(v[1]), math.rad(v[2]), math.rad(v[3]))
+			local offset = Vector3.new(v[4] or 0, v[5] or 0, v[6] or 0)
+			-- rotate about the joint pivot in the parent's space, keep the joint's own orientation
+			motor.C0 = CFrame.new(base.Position + offset) * rot * base.Rotation
+		elseif motor.Parent then
+			motor.C0 = base
+		end
+	end
+end
+
+local function lerpPose(a: Pose, b: Pose, t: number): Pose
+	local out = {}
+	for _, joint in { "R", "L", "W", "Root" } do
+		local va, vb = a[joint], b[joint]
+		if va or vb then
+			va = va or { 0, 0, 0, 0, 0, 0 }
+			vb = vb or { 0, 0, 0, 0, 0, 0 }
+			local v = {}
+			for i = 1, 6 do
+				local x, y = va[i] or 0, vb[i] or 0
+				v[i] = x + (y - x) * t
+			end
+			out[joint] = v
+		end
+	end
+	return out
+end
+
+local function ease(t: number): number
+	return if t < 0.5 then 2 * t * t else 1 - (-2 * t + 2) ^ 2 / 2
+end
+
+-- ===================================================================== animation library
+local NEUTRAL: Pose = {}
+
+-- Weapon families decide the light-combo shapes.
+local FAMILY = {
+	Sword = "Slash", Greatsword = "Slash", Axe = "Slash", Fist = "Punch",
+	Hammer = "Smash", Dagger = "Dagger", Spear = "Thrust",
+	Bow = "Bow", Staff = "Staff", Seal = "Seal",
+}
+
+-- { windupPose, strikePose } for each family and combo step
+local LIGHT = {
+	Slash = {
+		{ { R = { 150, 0, 35 }, W = { 0, 25, 0 } }, { R = { 40, 0, -35 }, W = { -10, -25, 0 } } }, -- diagonal cut
+		{ { R = { 85, 0, 75 }, W = { 0, 35, 0 } }, { R = { 85, 0, -55 }, W = { 0, -35, 0 } } }, -- horizontal sweep
+		{ { R = { 175, 0, 10 }, W = { 12, 0, 0 } }, { R = { 35, 0, 0 }, W = { -20, 0, 0 } } }, -- overhead finisher
+	},
+	Smash = {
+		{ { R = { 170, 0, 15 }, L = { 150, 0, 15 }, W = { 15, 0, 0 } }, { R = { 30, 0, 0 }, L = { 30, 0, 0 }, W = { -25, 0, 0 } } },
+		{ { R = { 90, 0, 80 }, W = { 0, 45, 0 } }, { R = { 80, 0, -60 }, W = { -5, -40, 0 } } },
+	},
+	Dagger = {
+		{ { R = { 70, 0, 20, 0, 0, 0.5 } }, { R = { 95, 0, 0, 0, 0, -0.6 }, W = { -8, -10, 0 } } },
+		{ { R = { 110, 0, 50 } }, { R = { 70, 0, -40 }, W = { 0, -20, 0 } } },
+		{ { R = { 70, 0, 20, 0, 0, 0.5 } }, { R = { 95, 0, 0, 0, 0, -0.6 }, W = { -8, 10, 0 } } },
+		{ { R = { 160, 0, 20 }, W = { 10, 0, 0 } }, { R = { 50, 0, -10 }, W = { -18, 0, 0 } } },
+	},
+	Thrust = {
+		{ { R = { 75, 0, 15, 0, 0, 0.7 }, W = { 0, 15, 0 } }, { R = { 92, 0, 0, 0, 0, -0.9 }, W = { -10, -10, 0 } } },
+	},
+	Punch = {
+		{ { R = { 70, 0, 10, 0, 0, 0.5 } }, { R = { 92, 0, 0, 0, 0, -0.8 }, W = { 0, -15, 0 } } },
+		{ { L = { 70, 0, -10, 0, 0, 0.5 } }, { L = { 92, 0, 0, 0, 0, -0.8 }, W = { 0, 15, 0 } } },
+	},
+	Bow = { { { R = { 92, 0, 0 }, L = { 85, 0, 40, 0, 0, 0.4 }, W = { 0, 20, 0 } }, { R = { 92, 0, 0 }, L = { 80, 0, 50, 0, 0, 0.8 }, W = { 0, 20, 0 } } } },
+	Staff = { { { R = { 130, 0, 10 } }, { R = { 95, 0, 0, 0, 0, -0.5 }, W = { -8, 0, 0 } } } },
+	Seal = { { { R = { 160, 0, 20 }, W = { 8, 0, 0 } }, { R = { 100, 0, 0, 0, 0, -0.4 }, W = { -8, 0, 0 } } } },
+}
+
+local HEAVY = {
+	Slash = { { R = { 185, 0, 25 }, W = { 18, 30, 0 } }, { R = { 25, 0, -20 }, W = { -28, -15, 0 } } },
+	Smash = { { R = { 185, 0, 10 }, L = { 175, 0, 10 }, W = { 22, 0, 0 } }, { R = { 20, 0, 0 }, L = { 20, 0, 0 }, W = { -35, 0, 0 } } },
+	Dagger = { { R = { 60, 0, 25, 0, 0, 0.9 }, W = { 0, 30, 0 } }, { R = { 95, 0, 0, 0, 0, -1 }, W = { -15, -20, 0 } } },
+	Thrust = { { R = { 70, 0, 25, 0, 0, 1 }, W = { 5, 35, 0 } }, { R = { 95, 0, 0, 0, 0, -1.2 }, W = { -18, -20, 0 } } },
+	Punch = { { R = { 60, 0, 30, 0, 0, 0.8 }, W = { 0, 35, 0 } }, { R = { 95, 0, 0, 0, 0, -1 }, W = { -15, -25, 0 } } },
+	Bow = { { R = { 92, 0, 0 }, L = { 85, 0, 35, 0, 0, 0.3 }, W = { 0, 25, 0 } }, { R = { 92, 0, 0 }, L = { 80, 0, 55, 0, 0, 1 }, W = { 0, 25, 0 } } },
+	Staff = { { R = { 175, 0, 0 }, L = { 165, 0, 0 }, W = { 12, 0, 0 } }, { R = { 100, 0, 0, 0, 0, -0.6 }, L = { 100, 0, 0, 0, 0, -0.6 }, W = { -15, 0, 0 } } },
+	Seal = { { R = { 175, 0, 0 }, L = { 165, 0, 0 }, W = { 12, 0, 0 } }, { R = { 100, 0, 0 }, L = { 100, 0, 0 }, W = { -15, 0, 0 } } },
+}
+
+local BLOCK: Pose = { R = { 70, 0, -30 }, L = { 65, 0, 40 }, W = { -5, 0, 0 } }
+
+local function attackFrames(pair, windup: number, recovery: number): { Frame }
+	local w = math.max(0.06, windup)
+	return {
+		{ T = 0, Pose = NEUTRAL },
+		{ T = w * 0.8, Pose = pair[1] },
+		{ T = w + 0.06, Pose = pair[2] },
+		{ T = w + recovery * 0.45, Pose = pair[2] },
+		{ T = w + recovery * 0.95, Pose = NEUTRAL },
+	}
+end
+
+-- Builds keyframes for an animation request.
+function AnimationController.Build(payload): { Frame }?
+	local anim = payload.Anim
+	local family = FAMILY[payload.WeaponType or "Fist"] or "Slash"
+	if anim == "Light" then
+		local set = LIGHT[family] or LIGHT.Slash
+		local pair = set[((payload.Combo or 1) - 1) % #set + 1]
+		return attackFrames(pair, payload.Windup or 0.2, payload.Recovery or 0.35)
+	elseif anim == "Heavy" then
+		return attackFrames(HEAVY[family] or HEAVY.Slash, payload.Windup or 0.45, payload.Recovery or 0.55)
+	elseif anim == "Parry" then
+		local p = { R = { 105, 0, -55 }, L = { 60, 0, 30 }, W = { 0, -20, 0 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = 0.07, Pose = p }, { T = 0.25, Pose = p }, { T = 0.45, Pose = NEUTRAL } }
+	elseif anim == "Dodge" then
+		local d = 0.34
+		local frames = { { T = 0, Pose = NEUTRAL } }
+		for i = 1, 6 do
+			local a = i / 6
+			table.insert(frames, { T = d * a, Pose = { Root = { -360 * a, 0, 0 }, R = { 60, 0, -20 }, L = { 60, 0, 20 } } })
+		end
+		table.insert(frames, { T = d + 0.08, Pose = NEUTRAL })
+		return frames
+	elseif anim == "Flask" then
+		local p = { R = { 150, 0, -45 }, W = { 10, 0, 0 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = 0.25, Pose = p }, { T = 0.75, Pose = p }, { T = 1.0, Pose = NEUTRAL } }
+	elseif anim == "Cast" then
+		local w = math.max(0.15, payload.Windup or 0.3)
+		local up = { R = { 165, 0, 15 }, L = { 165, 0, -15 }, W = { 12, 0, 0 } }
+		local out = { R = { 95, 0, 0, 0, 0, -0.5 }, L = { 95, 0, 0, 0, 0, -0.5 }, W = { -12, 0, 0 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = w * 0.85, Pose = up }, { T = w + 0.08, Pose = out }, { T = w + 0.35, Pose = out }, { T = w + 0.6, Pose = NEUTRAL } }
+	elseif anim == "Hurt" then
+		local p = { W = { 22, 0, 0 }, R = { 30, 0, 20 }, L = { 30, 0, -20 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = 0.08, Pose = p }, { T = 0.3, Pose = NEUTRAL } }
+	end
+	return nil
+end
+
+function AnimationController.Play(character: Model?, payload)
+	if not character or not character.Parent then
+		return
+	end
+	local frames = AnimationController.Build(payload)
+	if not frames then
+		return
+	end
+	playing[character] = { Frames = frames, Start = os.clock(), Duration = frames[#frames].T }
+end
+
+function AnimationController.PlayFor(userId: number, payload)
+	local plr = Players:GetPlayerByUserId(userId)
+	if plr and plr.Character then
+		AnimationController.Play(plr.Character, payload)
+	end
+end
+
+function AnimationController.PlayLocal(payload)
+	AnimationController.Play(Players.LocalPlayer.Character, payload)
+end
+
+-- ===================================================================== update loop
+local function sample(state, t: number): Pose
+	local frames = state.Frames
+	for i = 2, #frames do
+		local a, b = frames[i - 1], frames[i]
+		if t <= b.T then
+			local span = b.T - a.T
+			local alpha = if span > 0 then ease((t - a.T) / span) else 1
+			return lerpPose(a.Pose, b.Pose, alpha)
+		end
+	end
+	return frames[#frames].Pose
+end
+
+function AnimationController.Init()
+	RunService.RenderStepped:Connect(function()
+		-- held guard pose for blocking players
+		for _, plr in Players:GetPlayers() do
+			local char = plr.Character
+			if char then
+				if plr:GetAttribute("Blocking") then
+					holding[char] = BLOCK
+				elseif holding[char] then
+					holding[char] = nil
+					if not playing[char] then
+						applyPose(char, nil)
+					end
+				end
+			end
+		end
+		local now = os.clock()
+		for char, state in playing do
+			local t = now - state.Start
+			if t >= state.Duration or not char.Parent then
+				playing[char] = nil
+				if char.Parent then
+					applyPose(char, holding[char])
+				end
+			else
+				applyPose(char, sample(state, t))
+			end
+		end
+		for char, pose in holding do
+			if not playing[char] and char.Parent then
+				applyPose(char, pose)
+			end
+		end
+	end)
+	Players.LocalPlayer.CharacterAdded:Connect(function(char)
+		rigs[char] = nil
+		playing[char] = nil
+	end)
+end
+
+return AnimationController
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="113">
+            <Properties>
               <string name="Name">AudioController</string>
               <string name="Source"><![CDATA[--[[
 	AudioController
@@ -15593,7 +15941,7 @@ return AudioController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="113">
+          <Item class="ModuleScript" referent="114">
             <Properties>
               <string name="Name">CameraController</string>
               <string name="Source"><![CDATA[--[[
@@ -15852,7 +16200,7 @@ return CameraController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="114">
+          <Item class="ModuleScript" referent="115">
             <Properties>
               <string name="Name">ClientState</string>
               <string name="Source"><![CDATA[--[[
@@ -15952,7 +16300,7 @@ return ClientState
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="115">
+          <Item class="ModuleScript" referent="116">
             <Properties>
               <string name="Name">CombatController</string>
               <string name="Source"><![CDATA[--[[
@@ -15977,7 +16325,10 @@ local CombatController = {}
 
 local player = Players.LocalPlayer
 local actionRemote: RemoteEvent
-local CameraController, ClientState, AudioController
+local CameraController, ClientState, AudioController, AnimationController
+local Abilities = require(Shared.Config.Abilities)
+local combo = 0
+local lastLightEnd = 0
 local lockUntil = 0
 local heavyStart: number? = nil
 local lastDodge = 0
@@ -15987,6 +16338,7 @@ function CombatController.Init(deps)
 	CameraController = deps.CameraController
 	ClientState = deps.ClientState
 	AudioController = deps.AudioController
+	AnimationController = deps.AnimationController
 	actionRemote = Net.event("Action")
 end
 
@@ -16014,6 +16366,15 @@ function CombatController.Light()
 	end
 	local wt = weaponType()
 	lockUntil = os.clock() + wt.Light.Windup + wt.Light.Recovery * 0.8
+	-- mirror the server's combo rule so the local swing matches what others see
+	if os.clock() - lastLightEnd <= 0.7 and combo > 0 then
+		combo = combo % #wt.Light.Motion + 1
+	else
+		combo = 1
+	end
+	lastLightEnd = lockUntil
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = wtName, Windup = wt.Light.Windup, Recovery = wt.Light.Recovery })
 	send({ Kind = "Light", Aim = CameraController.AimDirection() })
 	AudioController.Play("Swing")
 end
@@ -16036,6 +16397,9 @@ function CombatController.HeavyEnd()
 	end
 	local wt = weaponType()
 	lockUntil = os.clock() + wt.Heavy.Windup + wt.Heavy.Recovery * 0.8
+	combo = 0
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = wtName, Windup = wt.Heavy.Windup, Recovery = wt.Heavy.Recovery })
 	-- the server measures the charge itself between HeavyStart and Heavy
 	send({ Kind = "Heavy", Aim = CameraController.AimDirection() })
 	AudioController.Play("HeavySwing")
@@ -16057,7 +16421,9 @@ function CombatController.Dodge()
 	end
 	lastDodge = os.clock()
 	lockUntil = os.clock() + 0.35
+	combo = 0
 	send({ Kind = "Dodge" })
+	AnimationController.PlayLocal({ Anim = "Dodge" })
 	-- local dash (character physics are client-owned)
 	local dir = hum.MoveDirection
 	if dir.Magnitude < 0.1 then
@@ -16111,6 +16477,8 @@ function CombatController.Parry()
 	end
 	lockUntil = os.clock() + 0.4
 	send({ Kind = "Parry" })
+	local _, wtName = weaponType()
+	AnimationController.PlayLocal({ Anim = "Parry", WeaponType = wtName })
 end
 
 function CombatController.SetSprint(on: boolean)
@@ -16122,6 +16490,11 @@ function CombatController.Ability(slot: string)
 		return
 	end
 	send({ Kind = "Ability", Slot = slot, Aim = CameraController.AimDirection(), TargetId = CameraController.TargetEntityId() })
+	local p = ClientState.Profile
+	local def = p and Abilities[p.Abilities[slot]]
+	if def and def.Type ~= "ShadowStep" then
+		AnimationController.PlayLocal({ Anim = "Cast", Windup = def.Windup or 0.2 })
+	end
 end
 
 function CombatController.Flask()
@@ -16130,6 +16503,9 @@ function CombatController.Flask()
 	end
 	lockUntil = os.clock() + GameConfig.Flask.UseTime
 	send({ Kind = "Flask" })
+	if (player:GetAttribute("FlaskCharges") or 0) > 0 then
+		AnimationController.PlayLocal({ Anim = "Flask" })
+	end
 	AudioController.Play("Drink")
 end
 
@@ -16147,6 +16523,8 @@ end
 -- Server says we were staggered: drop local locks/charge
 function CombatController.OnStaggered(duration: number)
 	heavyStart = nil
+	combo = 0
+	AnimationController.PlayLocal({ Anim = "Hurt" })
 	lockUntil = os.clock() + duration
 end
 
@@ -16154,7 +16532,7 @@ return CombatController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="116">
+          <Item class="ModuleScript" referent="117">
             <Properties>
               <string name="Name">EffectsController</string>
               <string name="Source"><![CDATA[--[[
@@ -16385,7 +16763,7 @@ return EffectsController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="117">
+          <Item class="ModuleScript" referent="118">
             <Properties>
               <string name="Name">HUDController</string>
               <string name="Source"><![CDATA[--[[
@@ -16410,7 +16788,11 @@ local World = require(Shared.Config.World)
 local Formulas = require(Shared.Logic.Formulas)
 local Net = require(Shared.Net)
 
-local HUDController = {}
+local HUDController = {
+	AnimationController = nil :: any,
+	TrainingGoal = nil :: number?,
+	TrainingEnds = nil :: number?,
+}
 
 local player = Players.LocalPlayer
 local UIKit, ClientState, AudioController, CombatController, InputController
@@ -16722,6 +17104,8 @@ local function onFx(payload)
 		Debris:AddItem(p, 0.4)
 	elseif t == "Stagger" then
 		HUDController.Toast("Enemy staggered - strike now!", "Reward")
+	elseif t == "Anim" then
+		HUDController.AnimationController.PlayFor(payload.UserId, payload)
 	elseif t == "Blink" then
 		AudioController.Play("Dodge", payload.Position)
 	end
@@ -16905,6 +17289,7 @@ function HUDController.Init(deps)
 	AudioController = deps.AudioController
 	CombatController = deps.CombatController
 	InputController = deps.InputController
+	HUDController.AnimationController = deps.AnimationController
 	T = UIKit.Theme
 	gui = UIKit.new("ScreenGui", { Name = "TotfHUD", ResetOnSpawn = false, IgnoreGuiInset = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui") })
 	uiScale = UIKit.new("UIScale", { Parent = gui })
@@ -16999,7 +17384,7 @@ return HUDController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="118">
+          <Item class="ModuleScript" referent="119">
             <Properties>
               <string name="Name">InputController</string>
               <string name="Source"><![CDATA[--[[
@@ -17206,7 +17591,7 @@ return InputController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="119">
+          <Item class="ModuleScript" referent="120">
             <Properties>
               <string name="Name">MenuController</string>
               <string name="Source"><![CDATA[--[[
@@ -18288,7 +18673,7 @@ return MenuController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="120">
+          <Item class="ModuleScript" referent="121">
             <Properties>
               <string name="Name">UIKit</string>
               <string name="Source"><![CDATA[--[[
@@ -18460,7 +18845,7 @@ return UIKit
             </Properties>
           </Item>
         </Item>
-        <Item class="LocalScript" referent="121">
+        <Item class="LocalScript" referent="122">
           <Properties>
             <string name="Name">Main</string>
             <string name="Source"><![CDATA[--[[
@@ -18479,6 +18864,7 @@ local InputController = require(Controllers.InputController)
 local HUDController = require(Controllers.HUDController)
 local MenuController = require(Controllers.MenuController)
 local EffectsController = require(Controllers.EffectsController)
+local AnimationController = require(Controllers.AnimationController)
 
 local deps = {
 	UIKit = UIKit,
@@ -18490,10 +18876,12 @@ local deps = {
 	HUDController = HUDController,
 	MenuController = MenuController,
 	EffectsController = EffectsController,
+	AnimationController = AnimationController,
 }
 
 ClientState.Init()
 AudioController.Init()
+AnimationController.Init()
 CameraController.Init()
 CombatController.Init(deps)
 HUDController.Init(deps)
@@ -18510,7 +18898,7 @@ end
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="122">
+  <Item class="Workspace" referent="123">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">196.2</float>

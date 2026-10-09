@@ -351,86 +351,135 @@ function EntityModels.strike(motor: Motor6D?)
 	end)
 end
 
--- Player weapon as a Tool (gives the default character animations a held item and a slash anim).
-function EntityModels.buildWeaponTool(itemId: string?, skinId: string?): Tool?
-	local def = itemId and Items[itemId]
-	if not def then
-		return nil
+-- ===================================================================== player held gear
+-- Weapons are welded straight to the hand (no Tool), so orientation is exact and nothing
+-- depends on Roblox's tool-grip behaviour. Grip space: origin at the hand, the blade
+-- extends along -Z (forward when the arm hangs; upward when the arm is raised to strike).
+
+local function gearPart(model: Model, name: string, size: Vector3, color: Color3, material: Enum.Material, shape: Enum.PartType?): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = color
+	p.Material = material
+	if shape then
+		p.Shape = shape
 	end
-	local tool = Instance.new("Tool")
-	tool.Name = def.Name
-	tool.CanBeDropped = false
-	tool.RequiresHandle = true
-	tool.ManualActivationOnly = true
-	tool:SetAttribute("ItemId", itemId)
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Massless = true
+	p.CastShadow = false
+	p.Parent = model
+	return p
+end
+
+local function gripWeld(hand: BasePart, part: BasePart, grip: CFrame, offset: CFrame)
+	local w = Instance.new("Weld")
+	w.Part0 = hand
+	w.Part1 = part
+	w.C0 = grip * offset
+	w.Parent = part
+end
+
+local function handGrip(character: Model, side: string): (BasePart?, CFrame)
+	local r15 = character:FindFirstChild(side .. "Hand")
+	if r15 and r15:IsA("BasePart") then
+		return r15, CFrame.new(0, -r15.Size.Y / 2 + 0.05, 0)
+	end
+	local r6 = character:FindFirstChild(side .. " Arm")
+	if r6 and r6:IsA("BasePart") then
+		return r6, CFrame.new(0, -r6.Size.Y / 2 + 0.1, 0)
+	end
+	return nil, CFrame.new()
+end
+
+-- Returns { {name, size, offset(CFrame in grip space), role} } for a weapon type.
+local function weaponLayout(def)
 	local wtype = def.WeaponType
-	local skin = skinId and Cosmetics[skinId]
-	local color = skin and skin.Color or def.Color or Color3.fromRGB(160, 160, 165)
-	local material = skin and Enum.Material[skin.Material] or Enum.Material.Metal
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.CanCollide = false
-	handle.Massless = true
-	handle.CanQuery = false
-	handle.Color = Color3.fromRGB(60, 45, 35)
-	handle.Material = Enum.Material.Wood
-	handle.Size = Vector3.new(0.3, 1.2, 0.3)
-	handle.Parent = tool
-	local length, width, thick = 4, 0.4, 0.15
-	if wtype == "Greatsword" then
-		length, width = 6, 0.8
-	elseif wtype == "Dagger" then
-		length, width = 1.8, 0.3
+	local L = {}
+	local function add(name, size, offset, role, shape)
+		table.insert(L, { Name = name, Size = size, Offset = offset, Role = role, Shape = shape })
+	end
+	if wtype == "Sword" or wtype == "Greatsword" or wtype == "Dagger" then
+		local length = if wtype == "Greatsword" then 5.5 elseif wtype == "Dagger" then 1.6 else 3.6
+		local width = if wtype == "Greatsword" then 0.7 elseif wtype == "Dagger" then 0.28 else 0.38
+		add("Grip", Vector3.new(0.28, 0.28, if wtype == "Greatsword" then 1.4 else 0.9), CFrame.new(0, 0, 0.1), "Wood")
+		add("Guard", Vector3.new(0.3, width * 2 + 0.5, 0.25), CFrame.new(0, 0, -0.45), "Trim")
+		add("Blade", Vector3.new(0.12, width, length), CFrame.new(0, 0, -0.55 - length / 2), "Metal")
 	elseif wtype == "Axe" then
-		length, width = 3, 0.3
+		add("Haft", Vector3.new(0.28, 0.28, 3.2), CFrame.new(0, 0, -1.1), "Wood")
+		add("Head", Vector3.new(0.2, 1.3, 1.1), CFrame.new(0, 0.6, -2.3), "Metal")
 	elseif wtype == "Hammer" then
-		length, width = 3.2, 0.35
+		add("Haft", Vector3.new(0.3, 0.3, 3.4), CFrame.new(0, 0, -1.2), "Wood")
+		add("Head", Vector3.new(1.3, 1.3, 1.6), CFrame.new(0, 0, -3.0), "Metal")
 	elseif wtype == "Spear" then
-		length, width = 7, 0.25
-	elseif wtype == "Staff" or wtype == "Seal" then
-		length, width = if wtype == "Staff" then 5 else 1.2, 0.3
+		add("Shaft", Vector3.new(0.25, 0.25, 7), CFrame.new(0, 0, -1.5), "Wood")
+		add("Tip", Vector3.new(0.12, 0.45, 1.2), CFrame.new(0, 0, -5.6), "Metal")
 	elseif wtype == "Bow" then
-		length, width = 4, 0.25
+		add("Limb", Vector3.new(0.22, 0.22, 4.6), CFrame.new(0, 0, -0.2), "Wood")
+		add("String", Vector3.new(0.04, 0.04, 4.4), CFrame.new(0, 0.55, -0.2), "String")
+	elseif wtype == "Staff" then
+		add("Shaft", Vector3.new(0.26, 0.26, 5.2), CFrame.new(0, 0, -1.6), "Wood")
+		add("Gem", Vector3.new(0.75, 0.75, 0.75), CFrame.new(0, 0, -4.4), "Gem", Enum.PartType.Ball)
+	elseif wtype == "Seal" then
+		add("Seal", Vector3.new(0.18, 1, 1), CFrame.new(0, 0, -0.55) * CFrame.Angles(0, 0, 0), "Trim", Enum.PartType.Cylinder)
+		add("Gem", Vector3.new(0.45, 0.45, 0.45), CFrame.new(-0.1, 0, -0.55), "Gem", Enum.PartType.Ball)
 	end
-	local blade = Instance.new("Part")
-	blade.Name = "Blade"
-	blade.CanCollide = false
-	blade.Massless = true
-	blade.CanQuery = false
-	blade.Size = Vector3.new(thick, length, width)
-	blade.Color = color
-	blade.Material = material
-	blade.CFrame = handle.CFrame * CFrame.new(0, 0.6 + length / 2, 0)
-	blade.Parent = tool
-	weld(handle, blade)
-	if wtype == "Axe" or wtype == "Hammer" then
-		local head = Instance.new("Part")
-		head.Name = "WeaponHead"
-		head.CanCollide = false
-		head.Massless = true
-		head.CanQuery = false
-		head.Size = if wtype == "Axe" then Vector3.new(0.25, 1.2, 1.4) else Vector3.new(1.2, 1.2, 1.8)
-		head.Color = color
-		head.Material = material
-		head.CFrame = blade.CFrame * CFrame.new(0, length / 2 - 0.5, if wtype == "Axe" then 0.6 else 0)
-		head.Parent = tool
-		weld(blade, head)
-	elseif wtype == "Staff" or wtype == "Seal" then
-		local gem = Instance.new("Part")
-		gem.Name = "Gem"
-		gem.Shape = Enum.PartType.Ball
-		gem.CanCollide = false
-		gem.Massless = true
-		gem.CanQuery = false
-		gem.Size = Vector3.new(0.7, 0.7, 0.7)
-		gem.Material = Enum.Material.Neon
-		gem.Color = if def.DamageType == "Holy" then Color3.fromRGB(255, 230, 150) else Color3.fromRGB(120, 150, 255)
-		gem.CFrame = blade.CFrame * CFrame.new(0, length / 2 + 0.3, 0)
-		gem.Parent = tool
-		weld(blade, gem)
+	return L
+end
+
+-- Attaches the equipped weapon (right hand) and shield (left hand) to a character.
+function EntityModels.attachHeldGear(character: Model, weaponId: string?, skinId: string?, offhandId: string?)
+	local old = character:FindFirstChild("HeldGear")
+	if old then
+		old:Destroy()
 	end
-	tool.Grip = CFrame.new(0, -0.3, 0)
-	return tool
+	local gear = Instance.new("Model")
+	gear.Name = "HeldGear"
+	local skin = skinId and Cosmetics[skinId]
+	local wdef = weaponId and Items[weaponId]
+	local right, rgrip = handGrip(character, "Right")
+	rgrip *= CFrame.Angles(math.rad(15), 0, 0) -- carry the weapon slightly raised
+	if wdef and right then
+		local metal = skin and skin.Color or wdef.Color or Color3.fromRGB(175, 175, 182)
+		local metalMat = skin and Enum.Material[skin.Material] or Enum.Material.Metal
+		local trim = Color3.fromRGB(150, 120, 60)
+		local gem = if wdef.DamageType == "Holy" then Color3.fromRGB(255, 230, 150)
+			elseif wdef.DamageType == "Fire" then Color3.fromRGB(255, 130, 50)
+			else Color3.fromRGB(120, 150, 255)
+		for _, spec in weaponLayout(wdef) do
+			local color, mat = metal, metalMat
+			if spec.Role == "Wood" then
+				color, mat = Color3.fromRGB(70, 50, 36), Enum.Material.Wood
+			elseif spec.Role == "Trim" then
+				color, mat = trim, Enum.Material.Metal
+			elseif spec.Role == "Gem" then
+				color, mat = gem, Enum.Material.Neon
+			elseif spec.Role == "String" then
+				color, mat = Color3.fromRGB(220, 215, 200), Enum.Material.Fabric
+			end
+			local p = gearPart(gear, spec.Name, spec.Size, color, mat, spec.Shape)
+			p.CFrame = right.CFrame * rgrip * spec.Offset
+			gripWeld(right, p, rgrip, spec.Offset)
+		end
+		gear:SetAttribute("WeaponType", wdef.WeaponType)
+	end
+	local odef = offhandId and Items[offhandId]
+	local left, lgrip = handGrip(character, "Left")
+	if odef and odef.Kind == "Shield" and left then
+		local size = if odef.Stability >= 90 then Vector3.new(2.6, 3.4, 0.25) elseif odef.Stability <= 60 then Vector3.new(1.8, 1.8, 0.25) else Vector3.new(2.2, 2.8, 0.25)
+		local offset = CFrame.new(0, 0.6, -0.35)
+		local plate = gearPart(gear, "Shield", size, Color3.fromRGB(105, 100, 105), Enum.Material.Metal)
+		plate.CFrame = left.CFrame * lgrip * offset
+		gripWeld(left, plate, lgrip, offset)
+		local boss = gearPart(gear, "ShieldBoss", Vector3.new(0.6, 0.6, 0.3), Color3.fromRGB(170, 140, 70), Enum.Material.Metal)
+		local bossOffset = offset * CFrame.new(0, 0, -0.2)
+		boss.CFrame = left.CFrame * lgrip * bossOffset
+		gripWeld(left, boss, lgrip, bossOffset)
+	end
+	gear.Parent = character
+	return gear
 end
 
 return EntityModels

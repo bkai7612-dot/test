@@ -20,7 +20,11 @@ local World = require(Shared.Config.World)
 local Formulas = require(Shared.Logic.Formulas)
 local Net = require(Shared.Net)
 
-local HUDController = {}
+local HUDController = {
+	AnimationController = nil :: any,
+	TrainingGoal = nil :: number?,
+	TrainingEnds = nil :: number?,
+}
 
 local player = Players.LocalPlayer
 local UIKit, ClientState, AudioController, CombatController, InputController
@@ -332,6 +336,8 @@ local function onFx(payload)
 		Debris:AddItem(p, 0.4)
 	elseif t == "Stagger" then
 		HUDController.Toast("Enemy staggered - strike now!", "Reward")
+	elseif t == "Anim" then
+		HUDController.AnimationController.PlayFor(payload.UserId, payload)
 	elseif t == "Blink" then
 		AudioController.Play("Dodge", payload.Position)
 	end
@@ -515,6 +521,7 @@ function HUDController.Init(deps)
 	AudioController = deps.AudioController
 	CombatController = deps.CombatController
 	InputController = deps.InputController
+	HUDController.AnimationController = deps.AnimationController
 	T = UIKit.Theme
 	gui = UIKit.new("ScreenGui", { Name = "TotfHUD", ResetOnSpawn = false, IgnoreGuiInset = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui") })
 	uiScale = UIKit.new("UIScale", { Parent = gui })

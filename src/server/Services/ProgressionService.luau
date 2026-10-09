@@ -158,6 +158,7 @@ function ProgressionService.Start()
 		end
 		S.PlayerStateService.RecomputeStats(player)
 		S.PlayerStateService.FullRestore(player)
+		S.InventoryService.ApplyWeaponVisual(player) -- show the starting weapon immediately
 		S.CosmeticService.Refresh(player)
 		S.PlayerStateService.Sync(player)
 		S.DataService.Save(player)
