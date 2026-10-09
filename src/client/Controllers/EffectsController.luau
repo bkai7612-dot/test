@@ -25,17 +25,19 @@ local HIGH_CONTRAST = {
 	Hazard = Color3.fromRGB(255, 140, 0),
 }
 
+-- Per-region look. The hub and training grounds are bright and welcoming; the wilds are
+-- moodier but always readable (Ambient never drops low enough to hide enemies).
 local REGION_ATMOSPHERE = {
-	sanctuary = { Density = 0.38, Color = Color3.fromRGB(160, 140, 140), Haze = 1.8 },
-	training = { Density = 0.36, Color = Color3.fromRGB(170, 150, 130), Haze = 1.5 },
-	forest = { Density = 0.6, Color = Color3.fromRGB(150, 165, 160), Haze = 3.2 },
-	village = { Density = 0.42, Color = Color3.fromRGB(160, 130, 110), Haze = 2 },
-	cemetery = { Density = 0.55, Color = Color3.fromRGB(130, 140, 165), Haze = 2.8 },
-	caves = { Density = 0.5, Color = Color3.fromRGB(60, 60, 70), Haze = 1 },
-	fortress = { Density = 0.44, Color = Color3.fromRGB(150, 120, 110), Haze = 2.2 },
-	vale = { Density = 0.4, Color = Color3.fromRGB(120, 190, 170), Haze = 2 },
-	pvp = { Density = 0.42, Color = Color3.fromRGB(150, 110, 100), Haze = 2 },
-	wilds = { Density = 0.45, Color = Color3.fromRGB(150, 140, 145), Haze = 2.2 },
+	sanctuary = { Density = 0.22, Color = Color3.fromRGB(215, 205, 195), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 120), Outdoor = Color3.fromRGB(175, 170, 165) },
+	training = { Density = 0.22, Color = Color3.fromRGB(215, 205, 190), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 115), Outdoor = Color3.fromRGB(175, 170, 160) },
+	pvp = { Density = 0.3, Color = Color3.fromRGB(190, 160, 150), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(115, 105, 105), Outdoor = Color3.fromRGB(160, 150, 145) },
+	forest = { Density = 0.45, Color = Color3.fromRGB(175, 190, 185), Haze = 2.2, Brightness = 2.2, Exposure = 0.2, Ambient = Color3.fromRGB(100, 108, 104), Outdoor = Color3.fromRGB(140, 150, 145) },
+	village = { Density = 0.32, Color = Color3.fromRGB(190, 165, 145), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(110, 102, 98), Outdoor = Color3.fromRGB(155, 145, 138) },
+	cemetery = { Density = 0.42, Color = Color3.fromRGB(160, 170, 195), Haze = 2, Brightness = 2.1, Exposure = 0.2, Ambient = Color3.fromRGB(98, 104, 118), Outdoor = Color3.fromRGB(135, 142, 160) },
+	caves = { Density = 0.35, Color = Color3.fromRGB(110, 110, 125), Haze = 0.8, Brightness = 2, Exposure = 0.45, Ambient = Color3.fromRGB(110, 110, 125), Outdoor = Color3.fromRGB(120, 120, 135) },
+	fortress = { Density = 0.32, Color = Color3.fromRGB(185, 160, 150), Haze = 1.5, Brightness = 2.5, Exposure = 0.25, Ambient = Color3.fromRGB(108, 100, 98), Outdoor = Color3.fromRGB(150, 140, 135) },
+	vale = { Density = 0.3, Color = Color3.fromRGB(160, 215, 200), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(100, 125, 118), Outdoor = Color3.fromRGB(145, 175, 165) },
+	wilds = { Density = 0.32, Color = Color3.fromRGB(190, 182, 185), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(108, 104, 106), Outdoor = Color3.fromRGB(155, 150, 150) },
 }
 
 local function settings()
@@ -131,11 +133,21 @@ local function refreshTower()
 end
 
 local function applyAtmosphere(target)
-	local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-	if not atmo or not target then
+	if not target then
 		return
 	end
-	TweenService:Create(atmo, TweenInfo.new(2.5), { Density = target.Density, Color = target.Color, Haze = target.Haze }):Play()
+	local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atmo then
+		TweenService:Create(atmo, TweenInfo.new(2.5), { Density = target.Density, Color = target.Color, Haze = target.Haze }):Play()
+	end
+	if target.Brightness then
+		TweenService:Create(Lighting, TweenInfo.new(2.5), {
+			Brightness = target.Brightness,
+			ExposureCompensation = target.Exposure,
+			Ambient = target.Ambient,
+			OutdoorAmbient = target.Outdoor,
+		}):Play()
+	end
 end
 
 function EffectsController.ApplySettings(s)
@@ -187,6 +199,7 @@ function EffectsController.Init(deps)
 		task.defer(refreshTower)
 	end)
 
+	applyAtmosphere(REGION_ATMOSPHERE.sanctuary)
 	local lastRegion
 	player:GetAttributeChangedSignal("Region"):Connect(function()
 		local region = player:GetAttribute("Region")
@@ -199,7 +212,9 @@ function EffectsController.Init(deps)
 
 	HUD.ArenaTheme = function(theme)
 		if theme then
-			applyAtmosphere({ Density = 0.5, Color = theme.Fog, Haze = 2.5 })
+			-- arenas: themed fog colour, but bright enough to read every telegraph
+			applyAtmosphere({ Density = 0.3, Color = theme.Fog, Haze = 1.2, Brightness = 2.6, Exposure = 0.35,
+				Ambient = Color3.fromRGB(115, 110, 115), Outdoor = Color3.fromRGB(150, 145, 150) })
 		else
 			lastRegion = nil
 			applyAtmosphere(REGION_ATMOSPHERE[player:GetAttribute("Region") or "wilds"] or REGION_ATMOSPHERE.wilds)

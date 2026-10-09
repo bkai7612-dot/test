@@ -47,26 +47,27 @@
     "Lighting": {
       "$properties": {
         "Ambient": [
-          0.18,
-          0.17,
-          0.2
+          0.42,
+          0.4,
+          0.42
         ],
         "OutdoorAmbient": [
-          0.32,
-          0.3,
-          0.34
+          0.62,
+          0.6,
+          0.6
         ],
-        "Brightness": 1.4,
-        "ClockTime": 17.6,
+        "Brightness": 2.6,
+        "ClockTime": 14.6,
         "FogColor": [
-          0.27,
-          0.27,
-          0.31
+          0.62,
+          0.6,
+          0.64
         ],
-        "FogEnd": 900,
-        "FogStart": 80,
+        "FogEnd": 1600,
+        "FogStart": 250,
         "GlobalShadows": true,
-        "Technology": "Future"
+        "Technology": "Future",
+        "ExposureCompensation": 0.25
       }
     },
     "SoundService": {

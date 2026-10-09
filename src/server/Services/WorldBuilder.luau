@@ -120,23 +120,24 @@ local function buildLighting()
 	-- NOTE: Lighting.Technology cannot be set by scripts (Roblox-only security); it is set in
 	-- default.project.json instead.
 	local atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.42
+	atmo.Density = 0.28
 	atmo.Offset = 0.15
-	atmo.Color = Color3.fromRGB(150, 140, 150)
+	atmo.Color = Color3.fromRGB(200, 195, 200)
 	atmo.Decay = Color3.fromRGB(90, 70, 80)
 	atmo.Glare = 0.2
-	atmo.Haze = 2.2
+	atmo.Haze = 1.2
 	atmo.Parent = Lighting
 	local cc = Instance.new("ColorCorrectionEffect")
 	cc.Name = "Grade"
-	cc.Contrast = 0.12
-	cc.Saturation = -0.22
+	cc.Brightness = 0.04
+	cc.Contrast = 0.08
+	cc.Saturation = -0.1
 	cc.TintColor = Color3.fromRGB(240, 232, 225)
 	cc.Parent = Lighting
 	local bloom = Instance.new("BloomEffect")
 	bloom.Intensity = 0.6
 	bloom.Size = 30
-	bloom.Threshold = 1.4
+	bloom.Threshold = 1.6
 	bloom.Parent = Lighting
 	local rays = Instance.new("SunRaysEffect")
 	rays.Intensity = 0.06
