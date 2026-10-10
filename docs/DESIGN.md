@@ -27,6 +27,20 @@ All numbers live in `src/shared/Config` (mostly `GameConfig.luau`). This documen
 
 - **Costs.** A light attack costs 14 stamina and a heavy costs 26, each multiplied by the weapon type's multiplier. A dodge costs 18 (more when heavily loaded), and a parry costs 10. Stamina regenerates at 34/s after a 0.75 s delay, and at 40% speed while blocking. An action is allowed while stamina is above 0.
 - **Dodge.** 0.32 s of i-frames and a 0.5 s cooldown. A dodge can cancel attack recovery but not the windup.
+- **Double jump and flips.** Press jump again in the air for one double jump per airtime (holding jump does not count). Two ways to flip:
+  - **Double jump, then dodge:** a fresh flip. It costs a full dodge and obeys the dodge cooldown.
+  - **Dodge, then jump within 0.45 s:** a chained flip that extends the dodge for 8 stamina, once per dodge.
+
+  Either way it is a front flip, or a backflip when moving backwards or not moving, and it gives fresh dodge i-frames (`CombatCore.flip`; client rules in `Logic/Movement`).
+- **Catalysts (staff and seal).** Every combo step is a different spell with its own mana cost:
+  - **Staff:** Arcane Bolt (6), Twin Bolts (8, two projectiles 12° apart) and Arcane Burst (12, large, piercing). The heavy is Charged Orb (16).
+  - **Seal:** Holy Burst ×2 and Radiant Column. The heavy is Sacred Nova.
+
+  When you can't afford the next spell, the catalyst switches to mana-free physical strikes:
+  - **Staff:** Staff Jab, Staff Sweep and Overhead Crack. The heavy is Spinning Sweep (360°).
+  - **Seal:** Seal Bash and Backhand. The heavy is Consecrated Slam.
+
+  Each strike that lands restores 3 mana. Switching between spells and strikes restarts the combo. The choice comes from the shared `Logic/Catalyst` module, so the client animation always matches the server.
 - **Parry.** 0.22 s window (shields can add more). It works only on attacks marked *Parryable* (gold telegraphs) while you face the attacker. Parrying an enemy staggers it. Parrying a boss removes 34% of its poise, or more against the Crimson Duelist.
 - **Latency grace.** A hostile hit that resolves at time T is applied at T+0.15 s. A dodge registered in [T−0.32, T+0.15] or a parry in [T−window, T+0.15] still counts.
 - **Block.** Covers 130° in front of you. Damage is reduced by the stability %, and blocking drains stamina. A guard break (stamina reaching 0) stuns for 1.1 s.

@@ -3,25 +3,25 @@
     <Properties>
       <string name="Name">Lighting</string>
       <Color3 name="Ambient">
-        <R>0.42</R>
-        <G>0.4</G>
-        <B>0.42</B>
+        <R>0.46</R>
+        <G>0.47</G>
+        <B>0.56</B>
       </Color3>
-      <float name="Brightness">2.6</float>
-      <float name="ClockTime">14.6</float>
-      <float name="ExposureCompensation">0.25</float>
+      <float name="Brightness">3</float>
+      <float name="ClockTime">0.4</float>
+      <float name="ExposureCompensation">0.55</float>
       <Color3 name="FogColor">
-        <R>0.62</R>
-        <G>0.6</G>
-        <B>0.64</B>
+        <R>0.16</R>
+        <G>0.18</G>
+        <B>0.26</B>
       </Color3>
-      <float name="FogEnd">1600</float>
-      <float name="FogStart">250</float>
+      <float name="FogEnd">1500</float>
+      <float name="FogStart">220</float>
       <bool name="GlobalShadows">true</bool>
       <Color3 name="OutdoorAmbient">
-        <R>0.62</R>
-        <G>0.6</G>
-        <B>0.6</B>
+        <R>0.6</R>
+        <G>0.62</G>
+        <B>0.74</B>
       </Color3>
       <token name="Technology">4</token>
     </Properties>
@@ -1468,6 +1468,13 @@ GameConfig.Combat = {
 	DodgeCooldown = 0.5,
 	DodgeIFrames = 0.32,
 	DodgeDistance = 16,
+	-- aerial flips (double jump + dodge, or dodge + jump)
+	FlipChainWindow = 0.45, -- jump this soon after a dodge to turn it into a flip
+	FlipChainCost = 8,
+	FlipLock = 0.45,
+	FlipDistance = 18,
+	FlipHeight = 34, -- upward speed given by a flip (studs/s)
+	DoubleJumpPower = 46, -- upward speed of the double jump (studs/s)
 	LatencyGrace = 0.15, -- extra time allowed on dodge/parry windows for network latency
 	ParryWindow = 0.22,
 	ParryCooldown = 0.9,
@@ -2417,16 +2424,38 @@ local WeaponTypes = {
 		StaminaMult = 0.8, Guard = 0.1, CritBonus = 0.2,
 	},
 	Staff = {
+		-- Spells cost mana per combo step. When mana is too low the staff is swung as a
+		-- quarterstaff instead (Fallback), and those strikes siphon mana back.
 		Ranged = true, Catalyst = true, ProjectileSpeed = 95, ProjectileRadius = 1.8, MaxRange = 120,
-		Light = { Windup = 0.32, Recovery = 0.38, Motion = { 1.0 }, Poise = 8, Mana = 6 },
-		Heavy = { Windup = 0.8, Recovery = 0.6, Motion = 2.0, Poise = 24, Mana = 16 },
+		Light = { Windup = 0.32, Recovery = 0.38, Motion = { 1.0, 0.65, 1.5 }, Poise = 8, Mana = { 6, 8, 12 },
+			Spells = {
+				{ Name = "Arcane Bolt" },
+				{ Name = "Twin Bolts", Shots = 2, Spread = 12 },
+				{ Name = "Arcane Burst", Size = 1.6, Speed = 0.8, Pierce = true },
+			} },
+		Heavy = { Windup = 0.8, Recovery = 0.6, Motion = 2.0, Poise = 24, Mana = 16, Spell = { Name = "Charged Orb", Size = 1.4, Pierce = true } },
+		Fallback = {
+			Range = 7.5, Arc = 110, DamageType = "Physical", ManaOnHit = 3, AnimType = "Spear",
+			Light = { Windup = 0.22, Recovery = 0.34, Motion = { 0.7, 0.75, 0.95 }, Poise = 12, Names = { "Staff Jab", "Staff Sweep", "Overhead Crack" } },
+			Heavy = { Windup = 0.55, Recovery = 0.6, Motion = 1.15, Poise = 30, Range = 8.5, Arc = 360, Name = "Spinning Sweep" },
+		},
 		StaminaMult = 0.6, Guard = 0.15, CritBonus = 0,
 	},
 	Seal = {
-		-- Faith catalyst: short-ranged holy burst instead of a projectile
+		-- Faith catalyst: short-ranged holy bursts. Out of mana it is used to bash (Fallback).
 		Range = 10, Arc = 70, Catalyst = true,
-		Light = { Windup = 0.3, Recovery = 0.38, Motion = { 1.0 }, Poise = 12, Mana = 5 },
-		Heavy = { Windup = 0.75, Recovery = 0.6, Motion = 1.9, Poise = 30, Mana = 14 },
+		Light = { Windup = 0.3, Recovery = 0.38, Motion = { 1.0, 1.0, 1.35 }, Poise = 12, Mana = { 5, 5, 9 },
+			Spells = {
+				{ Name = "Holy Burst" },
+				{ Name = "Holy Burst" },
+				{ Name = "Radiant Column", Range = 14, Arc = 50 },
+			} },
+		Heavy = { Windup = 0.75, Recovery = 0.6, Motion = 1.9, Poise = 30, Mana = 14, Spell = { Name = "Sacred Nova", Range = 11, Arc = 360 } },
+		Fallback = {
+			Range = 6, Arc = 90, DamageType = "Physical", ManaOnHit = 3, AnimType = "Punch",
+			Light = { Windup = 0.18, Recovery = 0.3, Motion = { 0.65, 0.75 }, Poise = 10, Names = { "Seal Bash", "Backhand" } },
+			Heavy = { Windup = 0.5, Recovery = 0.55, Motion = 1.1, Poise = 28, Name = "Consecrated Slam", Range = 7, Arc = 140 },
+		},
 		StaminaMult = 0.6, Guard = 0.15, CritBonus = 0,
 	},
 	Fist = {
@@ -2583,6 +2612,69 @@ return World
           <string name="Name">Logic</string>
         </Properties>
         <Item class="ModuleScript" referent="24">
+          <Properties>
+            <string name="Name">Catalyst</string>
+            <string name="Source"><![CDATA[--[[
+	Catalyst
+	Decides which move a light/heavy press performs. Shared by the server (CombatCore, the
+	authority) and the client (instant local animation), so both always agree.
+
+	Catalysts (Staff, Seal) cast a spell per combo step while mana lasts. When the player
+	cannot afford the next spell, the weapon's Fallback technique is used instead: physical
+	strikes that cost no mana (and siphon some back on hit). Switching between spells and
+	strikes restarts the combo. Every other weapon simply uses its normal move ("Weapon").
+]]
+
+local Catalyst = {}
+
+export type Choice = {
+	Mode: string, -- "Weapon" | "Spell" | "Melee"
+	Move: any, -- the move table whose Windup/Recovery/Motion/Poise apply
+	ManaCost: number,
+	Combo: number, -- combo step after this press (0 for heavies)
+	Spell: any?, -- per-step spell data (Shots, Spread, Size, Speed, Pierce, Range, Arc)
+	Name: string?, -- spell / technique name for the HUD
+	AnimType: string?, -- weapon type whose animations to use (nil = the weapon's own)
+}
+
+-- wt: WeaponTypes entry. combo: current combo index. chained: within the combo window.
+-- prevMode: mode of the previous attack. mana: current mana.
+function Catalyst.choose(wt, kind: string, combo: number, chained: boolean, prevMode: string?, mana: number): Choice
+	local spellMove = wt[kind]
+	local step = if kind == "Light" and chained and combo > 0 then combo % #spellMove.Motion + 1 else 1
+	local rawMana = spellMove.Mana
+	local cost = if type(rawMana) == "table" then (rawMana[step] or rawMana[#rawMana]) else (rawMana or 0)
+	local mode, move = "Weapon", spellMove
+	if cost > 0 then
+		if mana >= cost or not wt.Fallback then
+			mode = "Spell"
+		else
+			mode, move, cost = "Melee", wt.Fallback[kind], 0
+		end
+	end
+	if prevMode ~= nil and mode ~= prevMode then
+		chained = false
+	end
+	local newCombo = 0
+	if kind == "Light" then
+		newCombo = if chained and combo > 0 then combo % #move.Motion + 1 else 1
+	end
+	local spell, name, animType = nil, nil, nil
+	if mode == "Spell" then
+		spell = if kind == "Light" then (spellMove.Spells and spellMove.Spells[newCombo]) else spellMove.Spell
+		name = spell and spell.Name
+	elseif mode == "Melee" then
+		name = if kind == "Light" then (move.Names and move.Names[newCombo]) else move.Name
+		animType = wt.Fallback.AnimType
+	end
+	return { Mode = mode, Move = move, ManaCost = cost, Combo = newCombo, Spell = spell, Name = name, AnimType = animType }
+end
+
+return Catalyst
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="25">
           <Properties>
             <string name="Name">Formulas</string>
             <string name="Source"><![CDATA[--[[
@@ -2835,7 +2927,7 @@ return Formulas
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="25">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">Geometry</string>
             <string name="Source"><![CDATA[--[[
@@ -2922,7 +3014,107 @@ return Geometry
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="27">
+          <Properties>
+            <string name="Name">Movement</string>
+            <string name="Source"><![CDATA[--[[
+	Movement
+	Pure, testable rules for the client's air movement:
+
+	  * Double jump: one extra jump per airtime. It needs a fresh press (held jump keeps firing
+	    JumpRequest on some devices, so a stream of requests closer than PressGap apart is
+	    treated as one held press) and a short moment of airtime after take-off.
+	  * Flip: a front or back flip, which is a dodge in the air (the server grants the i-frames).
+	      - double jump, then dodge  -> flip
+	      - dodge, then jump (within FlipChainWindow of the dodge) -> flip
+	    One flip per airtime. Direction comes from movement input relative to facing:
+	    moving backwards (or no input) = backflip, otherwise = front flip.
+]]
+
+local Movement = {}
+
+Movement.PressGap = 0.2 -- seconds between jump requests that count as separate presses
+Movement.MinAirTime = 0.12 -- airtime before a double jump is allowed
+Movement.ChainWindow = 0.45 -- must match GameConfig.Combat.FlipChainWindow
+
+export type State = {
+	Airborne: boolean,
+	AirborneSince: number,
+	DoubleJumped: boolean,
+	Flipped: boolean,
+	LastJumpRequest: number,
+	LastDodge: number,
+}
+
+function Movement.new(): State
+	return {
+		Airborne = false,
+		AirborneSince = 0,
+		DoubleJumped = false,
+		Flipped = false,
+		LastJumpRequest = -math.huge,
+		LastDodge = -math.huge,
+	}
+end
+
+function Movement.tookOff(m: State, now: number)
+	if not m.Airborne then
+		m.Airborne = true
+		m.AirborneSince = now
+	end
+end
+
+function Movement.landed(m: State)
+	m.Airborne = false
+	m.DoubleJumped = false
+	m.Flipped = false
+end
+
+-- A jump request arrived. Returns "Flip", "DoubleJump" or nil (let the normal jump happen).
+function Movement.jumpRequest(m: State, now: number): string?
+	local fresh = now - m.LastJumpRequest >= Movement.PressGap
+	m.LastJumpRequest = now
+	if not fresh then
+		return nil
+	end
+	-- dodge then jump: the dodge becomes a flip (works from the ground or the air)
+	if now - m.LastDodge <= Movement.ChainWindow and not m.Flipped then
+		m.Flipped = true
+		return "Flip"
+	end
+	if m.Airborne and not m.DoubleJumped and now - m.AirborneSince >= Movement.MinAirTime then
+		m.DoubleJumped = true
+		return "DoubleJump"
+	end
+	return nil
+end
+
+-- The dodge button was pressed. Returns "Flip" or "Dodge".
+function Movement.dodgePressed(m: State, now: number): string
+	if m.Airborne and m.DoubleJumped and not m.Flipped then
+		m.Flipped = true
+		return "Flip"
+	end
+	m.LastDodge = now
+	return "Dodge"
+end
+
+-- "Front" or "Back" from horizontal move input and the character's facing.
+function Movement.flipDirection(moveX: number, moveZ: number, lookX: number, lookZ: number): string
+	local mag = math.sqrt(moveX * moveX + moveZ * moveZ)
+	if mag < 0.1 then
+		return "Back"
+	end
+	local lmag = math.max(math.sqrt(lookX * lookX + lookZ * lookZ), 1e-6)
+	local dot = (moveX * lookX + moveZ * lookZ) / (mag * lmag)
+	return if dot < -0.3 then "Back" else "Front"
+end
+
+return Movement
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="28">
           <Properties>
             <string name="Name">Stats</string>
             <string name="Source"><![CDATA[--[[
@@ -3044,7 +3236,7 @@ return Stats
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="27">
+      <Item class="ModuleScript" referent="29">
         <Properties>
           <string name="Name">Net</string>
           <string name="Source"><![CDATA[--[[
@@ -3114,11 +3306,11 @@ return Net
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="28">
+      <Item class="Folder" referent="30">
         <Properties>
           <string name="Name">Util</string>
         </Properties>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">Rng</string>
             <string name="Source"><![CDATA[--[[
@@ -3184,7 +3376,7 @@ return Rng
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">Signal</string>
             <string name="Source"><![CDATA[--[[
@@ -3230,15 +3422,15 @@ return Signal
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="31">
+  <Item class="ServerScriptService" referent="33">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="32">
+    <Item class="Folder" referent="34">
       <Properties>
         <string name="Name">Server</string>
       </Properties>
-      <Item class="Script" referent="33">
+      <Item class="Script" referent="35">
         <Properties>
           <string name="Name">Bootstrap</string>
           <token name="RunContext">0</token>
@@ -3316,11 +3508,11 @@ print(("[Tower of the Fallen] server ready (%d services)"):format(#ORDER))
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="34">
+      <Item class="Folder" referent="36">
         <Properties>
           <string name="Name">Config</string>
         </Properties>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">PromoCodes</string>
             <string name="Source"><![CDATA[--[[
@@ -3355,11 +3547,11 @@ return PromoCodes
           </Properties>
         </Item>
       </Item>
-      <Item class="Folder" referent="36">
+      <Item class="Folder" referent="38">
         <Properties>
           <string name="Name">Core</string>
         </Properties>
-        <Item class="ModuleScript" referent="37">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">AchievementCore</string>
             <string name="Source"><![CDATA[--[[
@@ -3457,7 +3649,7 @@ return AchievementCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">BossBrain</string>
             <string name="Source"><![CDATA[--[[
@@ -3554,7 +3746,7 @@ return BossBrain
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">CombatCore</string>
             <string name="Source"><![CDATA[--[[
@@ -3576,6 +3768,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(Shared.Config.GameConfig)
 local WeaponTypes = require(Shared.Config.WeaponTypes)
 local Formulas = require(Shared.Logic.Formulas)
+local Catalyst = require(Shared.Logic.Catalyst)
 
 local C = GameConfig.Combat
 local NEG = -1e9
@@ -3675,29 +3868,27 @@ function CombatCore.attack(state, kind: string, weaponType: string, now: number,
 		return false, "Busy"
 	end
 	local wt = WeaponTypes[weaponType] or WeaponTypes.Fist
-	local move = wt[kind]
-	local cost = (if kind == "Light" then C.LightAttackCost else C.HeavyAttackCost) * (wt.StaminaMult or 1)
-	local manaCost = move.Mana or 0
-	if manaCost > 0 and state.Mana < manaCost then
-		return false, "NoMana"
-	end
 	if state.Stamina <= GameConfig.Stamina.ExhaustedThreshold then
 		return false, "NoStamina"
 	end
-	-- combo
+	local chained = kind == "Light" and now - state.LastAttackEnd <= 0.7 and state.ComboIndex > 0
+	-- catalysts cast a spell per step, or fall back to mana-free strikes (shared with the client)
+	local choice = Catalyst.choose(wt, kind, state.ComboIndex, chained, state.ComboMode, state.Mana)
+	if choice.ManaCost > state.Mana then
+		return false, "NoMana"
+	end
+	local mode, move, manaCost = choice.Mode, choice.Move, choice.ManaCost
+	state.ComboMode = mode
+	state.ComboIndex = choice.Combo
+	local cost = (if kind == "Light" then C.LightAttackCost else C.HeavyAttackCost) * (wt.StaminaMult or 1)
 	local motion
 	if kind == "Light" then
-		if now - state.LastAttackEnd <= 0.7 and state.ComboIndex > 0 then
-			state.ComboIndex = state.ComboIndex % #move.Motion + 1
-		else
-			state.ComboIndex = 1
-		end
 		motion = move.Motion[state.ComboIndex]
 	else
-		state.ComboIndex = 0
 		local c = math.clamp(tonumber(charge) or 0, 0, C.HeavyChargeMax)
 		motion = move.Motion * (1 + C.HeavyChargeBonus * (c / C.HeavyChargeMax))
 	end
+	local spell, name = choice.Spell, choice.Name
 	CombatCore.spendStamina(state, cost, now)
 	state.Mana -= manaCost
 	state.Blocking = false
@@ -3715,7 +3906,12 @@ function CombatCore.attack(state, kind: string, weaponType: string, now: number,
 		StaminaCost = cost,
 		ManaCost = manaCost,
 		Combo = state.ComboIndex,
-		Ranged = wt.Ranged == true,
+		Ranged = wt.Ranged == true and mode ~= "Melee",
+		Mode = mode, -- "Weapon" | "Spell" | "Melee" (catalyst out of mana)
+		Spell = spell,
+		Name = name,
+		Range = if mode == "Melee" then (move.Range or wt.Fallback.Range) else nil,
+		Arc = if mode == "Melee" then (move.Arc or wt.Fallback.Arc) else nil,
 	}
 end
 
@@ -3758,6 +3954,38 @@ function CombatCore.dodge(state, now: number, costMult: number?)
 	state.ActionLockUntil = math.max(now + 0.35, 0)
 	state.LastAttackEnd = NEG
 	return true, { IFrames = C.DodgeIFrames }
+end
+
+--[[
+	Aerial flip (front or back): a dodge performed in the air.
+	* Chained: within FlipChainWindow of a dodge (dodge, then jump) the flip extends that dodge
+	  for a small extra cost, once per dodge.
+	* Fresh: otherwise (double jump, then dodge) it costs a normal dodge and obeys its cooldown.
+	Either way it grants a full set of dodge i-frames from the moment of the flip.
+]]
+function CombatCore.flip(state, now: number, costMult: number?)
+	if state.Dead or now < state.StaggeredUntil then
+		return false, "Busy"
+	end
+	if now < state.DodgeCancelFrom then
+		return false, "Busy"
+	end
+	local chained = now - state.LastDodge <= C.FlipChainWindow and state.FlipChainedFrom ~= state.LastDodge
+	if not chained and now - state.LastDodge < C.DodgeCooldown then
+		return false, "Cooldown"
+	end
+	local cost = (if chained then C.FlipChainCost else C.DodgeCost) * (costMult or 1)
+	if not CombatCore.spendStamina(state, cost, now) then
+		return false, "NoStamina"
+	end
+	state.LastDodge = now
+	-- a chained flip consumes the chain; a fresh flip cannot be chained into another flip
+	state.FlipChainedFrom = now
+	state.Blocking = false
+	state.ChargeStart = nil
+	state.ActionLockUntil = math.max(state.ActionLockUntil, now + C.FlipLock)
+	state.LastAttackEnd = NEG
+	return true, { IFrames = C.DodgeIFrames, Chained = chained, StaminaCost = cost }
 end
 
 function CombatCore.parry(state, now: number, parryBonus: number?)
@@ -4033,7 +4261,7 @@ return CombatCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="40">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">DeathCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4129,7 +4357,7 @@ return DeathCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="41">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">EconomyCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4236,7 +4464,7 @@ return EconomyCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="42">
+        <Item class="ModuleScript" referent="44">
           <Properties>
             <string name="Name">EncounterCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4425,7 +4653,7 @@ return EncounterCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="43">
+        <Item class="ModuleScript" referent="45">
           <Properties>
             <string name="Name">InventoryCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4731,7 +4959,7 @@ return InventoryCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">LootCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4785,7 +5013,7 @@ return LootCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="45">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">PartyCore</string>
             <string name="Source"><![CDATA[--[[
@@ -4965,7 +5193,7 @@ return PartyCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="46">
+        <Item class="ModuleScript" referent="48">
           <Properties>
             <string name="Name">ProfileSchema</string>
             <string name="Source"><![CDATA[--[[
@@ -5247,7 +5475,7 @@ return ProfileSchema
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="47">
+        <Item class="ModuleScript" referent="49">
           <Properties>
             <string name="Name">ProgressionCore</string>
             <string name="Source"><![CDATA[--[[
@@ -5421,7 +5649,7 @@ return ProgressionCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="48">
+        <Item class="ModuleScript" referent="50">
           <Properties>
             <string name="Name">PromoCore</string>
             <string name="Source"><![CDATA[--[[
@@ -5581,7 +5809,7 @@ return PromoCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="49">
+        <Item class="ModuleScript" referent="51">
           <Properties>
             <string name="Name">QuestCore</string>
             <string name="Source"><![CDATA[--[[
@@ -5736,7 +5964,7 @@ return QuestCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="50">
+        <Item class="ModuleScript" referent="52">
           <Properties>
             <string name="Name">ReceiptCore</string>
             <string name="Source"><![CDATA[--[[
@@ -5809,7 +6037,7 @@ return ReceiptCore
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="51">
+        <Item class="ModuleScript" referent="53">
           <Properties>
             <string name="Name">TrainingCore</string>
             <string name="Source"><![CDATA[--[[
@@ -6030,11 +6258,11 @@ return TrainingCore
           </Properties>
         </Item>
       </Item>
-      <Item class="Folder" referent="52">
+      <Item class="Folder" referent="54">
         <Properties>
           <string name="Name">Services</string>
         </Properties>
-        <Item class="ModuleScript" referent="53">
+        <Item class="ModuleScript" referent="55">
           <Properties>
             <string name="Name">AntiCheatService</string>
             <string name="Source"><![CDATA[--[[
@@ -6112,7 +6340,7 @@ return AntiCheatService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="54">
+        <Item class="ModuleScript" referent="56">
           <Properties>
             <string name="Name">AttackExecutor</string>
             <string name="Source"><![CDATA[--[[
@@ -6665,7 +6893,7 @@ return AttackExecutor
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="55">
+        <Item class="ModuleScript" referent="57">
           <Properties>
             <string name="Name">BossModels</string>
             <string name="Source"><![CDATA[--[[
@@ -8352,7 +8580,7 @@ return BossModels
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="56">
+        <Item class="ModuleScript" referent="58">
           <Properties>
             <string name="Name">BossService</string>
             <string name="Source"><![CDATA[--[[
@@ -9168,7 +9396,7 @@ return BossService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="57">
+        <Item class="ModuleScript" referent="59">
           <Properties>
             <string name="Name">CheckpointService</string>
             <string name="Source"><![CDATA[--[[
@@ -9294,13 +9522,13 @@ return CheckpointService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="58">
+        <Item class="ModuleScript" referent="60">
           <Properties>
             <string name="Name">CombatService</string>
             <string name="Source"><![CDATA[--[[
 	CombatService
 	Server-authoritative combat. Clients send *intents* through the Action remote
-	({ Kind = "Light" | "Heavy" | "Dodge" | "Parry" | "Block" | "Sprint" | "Ability" | "Flask" | "Item" }).
+	({ Kind = "Light" | "Heavy" | "Dodge" | "Flip" | "Parry" | "Block" | "Sprint" | "Ability" | "Flask" | "Item" }).
 	The server validates state, timing, stamina/mana, ownership and cooldowns; computes all
 	damage itself; and resolves hits using server positions. Clients never send damage numbers.
 
@@ -9640,20 +9868,47 @@ local function onAttack(player: Player, rt, kind: string, payload)
 		return
 	end
 	local seq = c.AttackSeq or 0
-	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = stats.WeaponType, Windup = info.Windup, Recovery = info.Recovery })
+	local wt = WeaponTypes[stats.WeaponType] or WeaponTypes.Fist
+	local animType = if info.Mode == "Melee" and wt.Fallback then wt.Fallback.AnimType else stats.WeaponType
+	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = animType, Windup = info.Windup, Recovery = info.Recovery })
+	if info.Name then
+		-- tell the caster which technique fired (spell names, or the mana-free staff strikes)
+		fx:FireClient(player, { Type = "Technique", Name = info.Name, Mode = info.Mode })
+	end
 	local aim = payload.Aim
 	task.delay(info.Windup, function()
 		if c.Dead or (c.AttackSeq or 0) ~= seq or not rt.Root or not rt.Root.Parent then
 			return
 		end
-		local wt = WeaponTypes[stats.WeaponType] or WeaponTypes.Fist
 		local power = stats.AttackRating
 		local dtype = stats.WeaponDamageType
-		if wt.Ranged then
-			fireProjectile(player, rt, aim, wt.ProjectileSpeed, wt.ProjectileRadius * (if kind == "Heavy" then 1.4 else 1), wt.MaxRange,
-				power, info.Motion, info.Poise, dtype, stats.WeaponStatus, DAMAGE_COLORS[dtype] or DAMAGE_COLORS.Physical, kind == "Heavy" and wt.Catalyst)
+		local spell = info.Spell or {}
+		if info.Mode == "Melee" then
+			-- out of mana: physical strikes that siphon mana back on hit
+			local fb = wt.Fallback
+			local hits = meleeSweep(player, rt, info.Range, info.Arc, power, info.Motion, info.Poise, fb.DamageType or "Physical", stats.WeaponStatus)
+			if hits > 0 and fb.ManaOnHit then
+				c.Mana = math.min(c.MaxMana, c.Mana + fb.ManaOnHit * hits)
+			end
+		elseif wt.Ranged then
+			local shots = spell.Shots or 1
+			local spread = math.rad(spell.Spread or 0)
+			local radius = wt.ProjectileRadius * (spell.Size or (if kind == "Heavy" then 1.4 else 1))
+			local speed = wt.ProjectileSpeed * (spell.Speed or 1)
+			local pierce = spell.Pierce == true or (kind == "Heavy" and wt.Catalyst == true)
+			local baseAim = if validVector(aim) then aim.Unit else rt.Root.CFrame.LookVector
+			for i = 1, shots do
+				local dir = baseAim
+				if shots > 1 then
+					local offset = -spread / 2 + spread * (i - 1) / (shots - 1)
+					dir = CFrame.fromAxisAngle(Vector3.yAxis, offset):VectorToWorldSpace(baseAim)
+				end
+				fireProjectile(player, rt, dir, speed, radius, wt.MaxRange, power, info.Motion, info.Poise, dtype, stats.WeaponStatus,
+					DAMAGE_COLORS[dtype] or DAMAGE_COLORS.Physical, pierce)
+			end
 		else
-			meleeSweep(player, rt, wt.Range * (if kind == "Heavy" then 1.1 else 1), wt.Arc, power, info.Motion, info.Poise, dtype, stats.WeaponStatus)
+			local range = spell.Range or wt.Range * (if kind == "Heavy" then 1.1 else 1)
+			meleeSweep(player, rt, range, spell.Arc or wt.Arc, power, info.Motion, info.Poise, dtype, stats.WeaponStatus)
 		end
 	end)
 end
@@ -9666,6 +9921,18 @@ local function onDodge(player: Player, rt, payload)
 		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames })
 	else
 		fx:FireClient(player, { Type = "ActionDenied", Action = "Dodge", Reason = info })
+	end
+end
+
+local function onFlip(player: Player, rt, payload)
+	local dir = if payload.Dir == "Back" then "Back" else "Front"
+	local ok, info = CombatCore.flip(rt.Combat, now(), rt.Stats.DodgeCostMult)
+	if ok then
+		AchievementCore.increment(rt.Profile, "Dodges")
+		broadcastAnim(player, rt, { Anim = "Flip", Dir = dir })
+		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames, Flip = dir })
+	else
+		fx:FireClient(player, { Type = "ActionDenied", Action = "Flip", Reason = info })
 	end
 end
 
@@ -9918,6 +10185,8 @@ local function onAction(player: Player, payload)
 		CombatCore.beginCharge(rt.Combat, workspace:GetServerTimeNow())
 	elseif kind == "Dodge" then
 		onDodge(player, rt, payload)
+	elseif kind == "Flip" then
+		onFlip(player, rt, payload)
 	elseif kind == "Parry" then
 		onParry(player, rt)
 	elseif kind == "Block" then
@@ -10057,7 +10326,7 @@ return CombatService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="59">
+        <Item class="ModuleScript" referent="61">
           <Properties>
             <string name="Name">CosmeticService</string>
             <string name="Source"><![CDATA[--[[
@@ -10192,7 +10461,7 @@ return CosmeticService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="60">
+        <Item class="ModuleScript" referent="62">
           <Properties>
             <string name="Name">DataService</string>
             <string name="Source"><![CDATA[--[[
@@ -10482,7 +10751,7 @@ return DataService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="61">
+        <Item class="ModuleScript" referent="63">
           <Properties>
             <string name="Name">DeathService</string>
             <string name="Source"><![CDATA[--[[
@@ -10705,7 +10974,7 @@ return DeathService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="62">
+        <Item class="ModuleScript" referent="64">
           <Properties>
             <string name="Name">EnemyService</string>
             <string name="Source"><![CDATA[--[[
@@ -11205,7 +11474,7 @@ return EnemyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="63">
+        <Item class="ModuleScript" referent="65">
           <Properties>
             <string name="Name">EntityModels</string>
             <string name="Source"><![CDATA[--[[
@@ -11697,7 +11966,7 @@ return EntityModels
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="64">
+        <Item class="ModuleScript" referent="66">
           <Properties>
             <string name="Name">EntityService</string>
             <string name="Source"><![CDATA[--[[
@@ -11923,7 +12192,7 @@ return EntityService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="65">
+        <Item class="ModuleScript" referent="67">
           <Properties>
             <string name="Name">ExplorationService</string>
             <string name="Source"><![CDATA[--[[
@@ -12056,7 +12325,7 @@ return ExplorationService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="66">
+        <Item class="ModuleScript" referent="68">
           <Properties>
             <string name="Name">InteractionService</string>
             <string name="Source"><![CDATA[--[[
@@ -12164,7 +12433,7 @@ return InteractionService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="67">
+        <Item class="ModuleScript" referent="69">
           <Properties>
             <string name="Name">InventoryService</string>
             <string name="Source"><![CDATA[--[[
@@ -12381,7 +12650,7 @@ return InventoryService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="68">
+        <Item class="ModuleScript" referent="70">
           <Properties>
             <string name="Name">LeaderboardService</string>
             <string name="Source"><![CDATA[--[[
@@ -12499,7 +12768,7 @@ return LeaderboardService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="69">
+        <Item class="ModuleScript" referent="71">
           <Properties>
             <string name="Name">NotifyService</string>
             <string name="Source"><![CDATA[--[[
@@ -12535,7 +12804,7 @@ return NotifyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="70">
+        <Item class="ModuleScript" referent="72">
           <Properties>
             <string name="Name">PartyService</string>
             <string name="Source"><![CDATA[--[[
@@ -12690,7 +12959,7 @@ return PartyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="71">
+        <Item class="ModuleScript" referent="73">
           <Properties>
             <string name="Name">PlayerStateService</string>
             <string name="Source"><![CDATA[--[[
@@ -12994,7 +13263,7 @@ return PlayerStateService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="72">
+        <Item class="ModuleScript" referent="74">
           <Properties>
             <string name="Name">ProgressionService</string>
             <string name="Source"><![CDATA[--[[
@@ -13229,7 +13498,7 @@ return ProgressionService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="73">
+        <Item class="ModuleScript" referent="75">
           <Properties>
             <string name="Name">ProjectileService</string>
             <string name="Source"><![CDATA[--[[
@@ -13470,7 +13739,7 @@ return ProjectileService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="74">
+        <Item class="ModuleScript" referent="76">
           <Properties>
             <string name="Name">PromoService</string>
             <string name="Source"><![CDATA[--[[
@@ -13649,7 +13918,7 @@ return PromoService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="75">
+        <Item class="ModuleScript" referent="77">
           <Properties>
             <string name="Name">PurchaseService</string>
             <string name="Source"><![CDATA[--[[
@@ -13759,7 +14028,7 @@ return PurchaseService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="76">
+        <Item class="ModuleScript" referent="78">
           <Properties>
             <string name="Name">QuestService</string>
             <string name="Source"><![CDATA[--[[
@@ -13830,7 +14099,7 @@ return QuestService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="77">
+        <Item class="ModuleScript" referent="79">
           <Properties>
             <string name="Name">RequestService</string>
             <string name="Source"><![CDATA[--[[
@@ -13891,7 +14160,7 @@ return RequestService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="78">
+        <Item class="ModuleScript" referent="80">
           <Properties>
             <string name="Name">ShopService</string>
             <string name="Source"><![CDATA[--[[
@@ -13936,7 +14205,7 @@ return ShopService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="79">
+        <Item class="ModuleScript" referent="81">
           <Properties>
             <string name="Name">TelegraphService</string>
             <string name="Source"><![CDATA[--[[
@@ -14147,7 +14416,7 @@ return TelegraphService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="80">
+        <Item class="ModuleScript" referent="82">
           <Properties>
             <string name="Name">TrainingService</string>
             <string name="Source"><![CDATA[--[[
@@ -14479,7 +14748,7 @@ return TrainingService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="81">
+        <Item class="ModuleScript" referent="83">
           <Properties>
             <string name="Name">WorldBuilder</string>
             <string name="Source"><![CDATA[--[[
@@ -14604,19 +14873,21 @@ local function buildLighting()
 	-- NOTE: Lighting.Technology cannot be set by scripts (Roblox-only security); it is set in
 	-- default.project.json instead.
 	local atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.28
-	atmo.Offset = 0.15
-	atmo.Color = Color3.fromRGB(200, 195, 200)
-	atmo.Decay = Color3.fromRGB(90, 70, 80)
-	atmo.Glare = 0.2
-	atmo.Haze = 1.2
+	-- night sky: low haze keeps the stars and moon visible; strong cool ambient (project file +
+	-- per-region values in EffectsController) keeps the ground and every enemy readable
+	atmo.Density = 0.24
+	atmo.Offset = 0.1
+	atmo.Color = Color3.fromRGB(70, 82, 115)
+	atmo.Decay = Color3.fromRGB(40, 44, 70)
+	atmo.Glare = 0
+	atmo.Haze = 0.4
 	atmo.Parent = Lighting
 	local cc = Instance.new("ColorCorrectionEffect")
 	cc.Name = "Grade"
-	cc.Brightness = 0.04
-	cc.Contrast = 0.08
-	cc.Saturation = -0.1
-	cc.TintColor = Color3.fromRGB(240, 232, 225)
+	cc.Brightness = 0.06
+	cc.Contrast = 0.1
+	cc.Saturation = -0.05
+	cc.TintColor = Color3.fromRGB(228, 234, 255) -- cool moonlit grade
 	cc.Parent = Lighting
 	local bloom = Instance.new("BloomEffect")
 	bloom.Intensity = 0.7
@@ -14641,15 +14912,15 @@ local function buildLighting()
 	dof.Parent = Lighting
 	local sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
 	sky.SunAngularSize = 12
-	sky.MoonAngularSize = 9
-	sky.StarCount = 3000
+	sky.MoonAngularSize = 16
+	sky.StarCount = 5000
 	sky.Parent = Lighting
 	-- volumetric clouds and nicer water
 	local terrain = workspace.Terrain
 	local clouds = terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
-	clouds.Cover = 0.55
-	clouds.Density = 0.45
-	clouds.Color = Color3.fromRGB(235, 230, 235)
+	clouds.Cover = 0.35
+	clouds.Density = 0.35
+	clouds.Color = Color3.fromRGB(125, 132, 160)
 	clouds.Parent = terrain
 	terrain.WaterColor = Color3.fromRGB(40, 70, 75)
 	terrain.WaterReflectance = 0.6
@@ -15303,7 +15574,7 @@ return WorldBuilder
           </Properties>
         </Item>
       </Item>
-      <Item class="Script" referent="82">
+      <Item class="Script" referent="84">
         <Properties>
           <string name="Name">TestRunner</string>
           <token name="RunContext">0</token>
@@ -15337,15 +15608,15 @@ end
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="83">
+  <Item class="ServerStorage" referent="85">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
-    <Item class="Folder" referent="84">
+    <Item class="Folder" referent="86">
       <Properties>
         <string name="Name">Tests</string>
       </Properties>
-      <Item class="ModuleScript" referent="85">
+      <Item class="ModuleScript" referent="87">
         <Properties>
           <string name="Name">Achievement.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -15376,7 +15647,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="86">
+      <Item class="ModuleScript" referent="88">
         <Properties>
           <string name="Name">Balance.spec</string>
           <string name="Source"><![CDATA[--[[
@@ -15526,7 +15797,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="87">
+      <Item class="ModuleScript" referent="89">
         <Properties>
           <string name="Name">BossFairness.spec</string>
           <string name="Source"><![CDATA[-- Tester-owned fairness and design checks for all 20 bosses.
@@ -15672,7 +15943,155 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="88">
+      <Item class="ModuleScript" referent="90">
+        <Properties>
+          <string name="Name">Catalyst.spec</string>
+          <string name="Source"><![CDATA[-- Staff/Seal move sets: spells while mana lasts, mana-free strikes while it recharges.
+local SSS = game:GetService("ServerScriptService")
+local Shared = game:GetService("ReplicatedStorage").Shared
+local CombatCore = require(SSS.Server.Core.CombatCore)
+local Catalyst = require(Shared.Logic.Catalyst)
+local WeaponTypes = require(Shared.Config.WeaponTypes)
+local Stats = require(Shared.Logic.Stats)
+local Helpers = require(game:GetService("ServerStorage").Tests.Helpers)
+
+return function(t)
+	local expect = t.expect
+	local function setup()
+		local s = CombatCore.newPlayerState(Stats.compute(Helpers.profile("Mage")), -100)
+		s.MaxMana, s.Mana = 200, 200
+		s.MaxStamina, s.Stamina = 1000, 1000
+		return s
+	end
+	-- performs attacks back to back inside the combo window
+	local clock = 0
+	local function swing(s, kind)
+		local ok, info = CombatCore.attack(s, kind, s.__weapon or "Staff", clock)
+		if ok then
+			clock = s.ActionLockUntil + 0.01
+		end
+		return ok, info
+	end
+
+	t.it("staff light combo casts three different spells with per-step mana costs", function()
+		local s = setup()
+		local names, costs = {}, {}
+		for i = 1, 3 do
+			local ok, info = swing(s, "Light")
+			expect(ok).toBe(true)
+			expect(info.Mode).toBe("Spell")
+			expect(info.Ranged).toBe(true)
+			names[i], costs[i] = info.Name, info.ManaCost
+		end
+		expect(names[1]).toBe("Arcane Bolt")
+		expect(names[2]).toBe("Twin Bolts")
+		expect(names[3]).toBe("Arcane Burst")
+		expect(costs[1] + costs[2] + costs[3]).toBe(6 + 8 + 12)
+		expect(s.Mana).toBe(200 - 26)
+	end)
+
+	t.it("twin bolts fire two projectiles and arcane burst pierces", function()
+		local s = setup()
+		swing(s, "Light")
+		local _, twin = swing(s, "Light")
+		expect(twin.Spell.Shots).toBe(2)
+		local _, burst = swing(s, "Light")
+		expect(burst.Spell.Pierce).toBe(true)
+		local _, orb = swing(s, "Heavy")
+		expect(orb.Name).toBe("Charged Orb")
+	end)
+
+	t.it("with no mana the staff strikes in melee instead of refusing", function()
+		local s = setup()
+		s.Mana = 0
+		local names = {}
+		for i = 1, 3 do
+			local ok, info = swing(s, "Light")
+			expect(ok).toBe(true)
+			expect(info.Mode).toBe("Melee")
+			expect(info.Ranged).toBe(false)
+			expect(info.ManaCost).toBe(0)
+			expect(info.Range).toBe(WeaponTypes.Staff.Fallback.Range)
+			names[i] = info.Name
+		end
+		expect(names[1]).toBe("Staff Jab")
+		expect(names[2]).toBe("Staff Sweep")
+		expect(names[3]).toBe("Overhead Crack")
+		expect(s.Mana).toBe(0)
+		local ok, heavy = swing(s, "Heavy")
+		expect(ok).toBe(true)
+		expect(heavy.Name).toBe("Spinning Sweep")
+		expect(heavy.Arc).toBe(360)
+	end)
+
+	t.it("strikes deal less than spells (motion values)", function()
+		local fb = WeaponTypes.Staff.Fallback
+		for i, m in fb.Light.Motion do
+			expect(m < WeaponTypes.Staff.Light.Motion[1] + 0.01).toBeTruthy()
+			expect(i <= #fb.Light.Names).toBeTruthy()
+		end
+		expect(fb.ManaOnHit > 0).toBeTruthy()
+	end)
+
+	t.it("running short mid-combo switches to strikes and restarts the combo", function()
+		local s = setup()
+		s.Mana = 7 -- enough for Arcane Bolt (6), not Twin Bolts (8)
+		local _, a = swing(s, "Light")
+		expect(a.Name).toBe("Arcane Bolt")
+		local _, b = swing(s, "Light")
+		expect(b.Mode).toBe("Melee")
+		expect(b.Name).toBe("Staff Jab") -- step 1 of the strike combo, not step 2
+		local _, c = swing(s, "Light")
+		expect(c.Name).toBe("Staff Sweep")
+		s.Mana = 200 -- mana recharged: back to spells, combo restarts at the first spell
+		local _, d = swing(s, "Light")
+		expect(d.Mode).toBe("Spell")
+		expect(d.Name).toBe("Arcane Bolt")
+	end)
+
+	t.it("seal has holy spells and a mana-free bash", function()
+		local s = setup()
+		s.__weapon = "Seal"
+		local _, a = swing(s, "Light")
+		expect(a.Name).toBe("Holy Burst")
+		s.Mana = 0
+		local _, b = swing(s, "Light")
+		expect(b.Mode).toBe("Melee")
+		expect(b.Name).toBe("Seal Bash")
+		local _, h = swing(s, "Heavy")
+		expect(h.Name).toBe("Consecrated Slam")
+	end)
+
+	t.it("non-catalyst weapons are unaffected", function()
+		local s = setup()
+		s.__weapon = "Sword"
+		s.Mana = 0
+		local ok, info = swing(s, "Light")
+		expect(ok).toBe(true)
+		expect(info.Mode).toBe("Weapon")
+		expect(info.ManaCost).toBe(0)
+		expect(info.Name).toBe(nil)
+	end)
+
+	t.it("client and server pick the same move (shared rule)", function()
+		-- the client runs Catalyst.choose with its own mirrored combo state
+		local s = setup()
+		local combo, mode = 0, nil
+		local manas = { 200, 9, 3, 3, 200, 200 }
+		for _, mana in manas do
+			s.Mana = mana
+			local predicted = Catalyst.choose(WeaponTypes.Staff, "Light", combo, combo > 0, mode, mana)
+			local _, info = swing(s, "Light")
+			expect(info.Mode).toBe(predicted.Mode)
+			expect(info.Name).toBe(predicted.Name)
+			combo, mode = predicted.Combo, predicted.Mode
+		end
+	end)
+end
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="91">
         <Properties>
           <string name="Name">Combat.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -15867,7 +16286,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="89">
+      <Item class="ModuleScript" referent="92">
         <Properties>
           <string name="Name">DataIntegrity.spec</string>
           <string name="Source"><![CDATA[-- Cross-reference validation for all data-driven configuration.
@@ -16073,7 +16492,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="90">
+      <Item class="ModuleScript" referent="93">
         <Properties>
           <string name="Name">Death.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16171,7 +16590,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="91">
+      <Item class="ModuleScript" referent="94">
         <Properties>
           <string name="Name">Economy.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16257,7 +16676,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="92">
+      <Item class="ModuleScript" referent="95">
         <Properties>
           <string name="Name">Encounter.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16343,7 +16762,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="93">
+      <Item class="ModuleScript" referent="96">
         <Properties>
           <string name="Name">Formulas.spec</string>
           <string name="Source"><![CDATA[local RS = game:GetService("ReplicatedStorage")
@@ -16435,7 +16854,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="94">
+      <Item class="ModuleScript" referent="97">
         <Properties>
           <string name="Name">Geometry.spec</string>
           <string name="Source"><![CDATA[local Geometry = require(game:GetService("ReplicatedStorage").Shared.Logic.Geometry)
@@ -16469,7 +16888,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="95">
+      <Item class="ModuleScript" referent="98">
         <Properties>
           <string name="Name">Helpers</string>
           <string name="Source"><![CDATA[-- Shared helpers for specs.
@@ -16513,7 +16932,7 @@ return Helpers
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="96">
+      <Item class="ModuleScript" referent="99">
         <Properties>
           <string name="Name">Inventory.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16613,7 +17032,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="97">
+      <Item class="ModuleScript" referent="100">
         <Properties>
           <string name="Name">Loot.spec</string>
           <string name="Source"><![CDATA[local LootCore = require(game:GetService("ServerScriptService").Server.Core.LootCore)
@@ -16650,7 +17069,130 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="98">
+      <Item class="ModuleScript" referent="101">
+        <Properties>
+          <string name="Name">Movement.spec</string>
+          <string name="Source"><![CDATA[-- Double jump and aerial front/back flips.
+local SSS = game:GetService("ServerScriptService")
+local Shared = game:GetService("ReplicatedStorage").Shared
+local Movement = require(Shared.Logic.Movement)
+local CombatCore = require(SSS.Server.Core.CombatCore)
+local Stats = require(Shared.Logic.Stats)
+local GameConfig = require(Shared.Config.GameConfig)
+local Helpers = require(game:GetService("ServerStorage").Tests.Helpers)
+local C = GameConfig.Combat
+
+return function(t)
+	local expect = t.expect
+
+	t.it("the first jump is a normal jump; a fresh press in the air double jumps once", function()
+		local m = Movement.new()
+		expect(Movement.jumpRequest(m, 0)).toBe(nil) -- on the ground: normal jump
+		Movement.tookOff(m, 0.02)
+		expect(Movement.jumpRequest(m, 0.06)).toBe(nil) -- too soon after take-off
+		expect(Movement.jumpRequest(m, 0.4)).toBe("DoubleJump")
+		expect(Movement.jumpRequest(m, 0.8)).toBe(nil) -- only one per airtime
+		Movement.landed(m)
+		expect(Movement.jumpRequest(m, 1.2)).toBe(nil)
+		Movement.tookOff(m, 1.2)
+		expect(Movement.jumpRequest(m, 1.6)).toBe("DoubleJump") -- reset after landing
+	end)
+
+	t.it("holding jump does not trigger a double jump", function()
+		local m = Movement.new()
+		Movement.jumpRequest(m, 0)
+		Movement.tookOff(m, 0)
+		local any = false
+		for i = 1, 30 do -- held key: requests every frame-ish
+			if Movement.jumpRequest(m, i * 0.05) then
+				any = true
+			end
+		end
+		expect(any).toBe(false)
+	end)
+
+	t.it("double jump then dodge = flip; only one flip per airtime", function()
+		local m = Movement.new()
+		Movement.tookOff(m, 0)
+		expect(Movement.jumpRequest(m, 0.3)).toBe("DoubleJump")
+		expect(Movement.dodgePressed(m, 0.4)).toBe("Flip")
+		expect(Movement.dodgePressed(m, 0.6)).toBe("Dodge")
+		Movement.landed(m)
+		expect(Movement.dodgePressed(m, 1)).toBe("Dodge")
+	end)
+
+	t.it("a dodge in the air without a double jump stays an air dash", function()
+		local m = Movement.new()
+		Movement.tookOff(m, 0)
+		expect(Movement.dodgePressed(m, 0.3)).toBe("Dodge")
+	end)
+
+	t.it("dodge then jump (in time) = flip", function()
+		local m = Movement.new()
+		expect(Movement.dodgePressed(m, 5)).toBe("Dodge")
+		expect(Movement.jumpRequest(m, 5.2)).toBe("Flip")
+		local late = Movement.new()
+		Movement.dodgePressed(late, 5)
+		expect(Movement.jumpRequest(late, 5 + Movement.ChainWindow + 0.1)).toBe(nil)
+		expect(Movement.ChainWindow).toBe(C.FlipChainWindow)
+	end)
+
+	t.it("flip direction follows movement input", function()
+		-- facing -Z
+		expect(Movement.flipDirection(0, 0, 0, -1)).toBe("Back") -- no input: backflip
+		expect(Movement.flipDirection(0, -1, 0, -1)).toBe("Front")
+		expect(Movement.flipDirection(0, 1, 0, -1)).toBe("Back")
+		expect(Movement.flipDirection(1, 0, 0, -1)).toBe("Front") -- sideways counts as front
+		expect(Movement.flipDirection(0.2, 0.9, 0, -1)).toBe("Back")
+	end)
+
+	local function state()
+		local s = CombatCore.newPlayerState(Stats.compute(Helpers.profile("Assassin")), -100)
+		s.Stamina, s.MaxStamina = 100, 100
+		return s
+	end
+
+	t.it("a fresh flip costs a dodge and grants dodge i-frames", function()
+		local s = state()
+		local ok, info = CombatCore.flip(s, 10)
+		expect(ok).toBe(true)
+		expect(info.Chained).toBe(false)
+		expect(s.Stamina).toBeNear(100 - C.DodgeCost)
+		expect(CombatCore.dodgeCovers(s, 10.1)).toBe(true)
+		expect(CombatCore.dodgeCovers(s, 10 + C.DodgeIFrames + 0.05)).toBe(false)
+	end)
+
+	t.it("dodge then flip chains for a small cost, once", function()
+		local s = state()
+		expect((CombatCore.dodge(s, 20))).toBe(true)
+		local ok, info = CombatCore.flip(s, 20.2)
+		expect(ok).toBe(true)
+		expect(info.Chained).toBe(true)
+		expect(s.Stamina).toBeNear(100 - C.DodgeCost - C.FlipChainCost)
+		-- i-frames refreshed from the flip
+		expect(CombatCore.dodgeCovers(s, 20.2 + C.DodgeIFrames - 0.02)).toBe(true)
+		-- a second flip straight after is not a chain and hits the dodge cooldown
+		local ok2, why = CombatCore.flip(s, 20.3)
+		expect(ok2).toBe(false)
+		expect(why).toBe("Cooldown")
+	end)
+
+	t.it("flips respect stamina, staggers and attack windups", function()
+		local s = state()
+		s.Stamina = 0
+		expect((CombatCore.flip(s, 30))).toBe(false)
+		local s2 = state()
+		s2.StaggeredUntil = 40
+		expect((CombatCore.flip(s2, 39))).toBe(false)
+		local s3 = state()
+		CombatCore.attack(s3, "Heavy", "Greatsword", 50)
+		expect((CombatCore.flip(s3, 50.1))).toBe(false) -- cannot flip out of a windup
+	end)
+end
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="102">
         <Properties>
           <string name="Name">Party.spec</string>
           <string name="Source"><![CDATA[local PartyCore = require(game:GetService("ServerScriptService").Server.Core.PartyCore)
@@ -16721,7 +17263,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="99">
+      <Item class="ModuleScript" referent="103">
         <Properties>
           <string name="Name">Profile.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16798,7 +17340,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="100">
+      <Item class="ModuleScript" referent="104">
         <Properties>
           <string name="Name">Progression.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16884,7 +17426,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="101">
+      <Item class="ModuleScript" referent="105">
         <Properties>
           <string name="Name">Promo.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -16984,7 +17526,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="102">
+      <Item class="ModuleScript" referent="106">
         <Properties>
           <string name="Name">Quest.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -17041,7 +17583,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="103">
+      <Item class="ModuleScript" referent="107">
         <Properties>
           <string name="Name">Receipt.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -17092,7 +17634,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="104">
+      <Item class="ModuleScript" referent="108">
         <Properties>
           <string name="Name">TestKit</string>
           <string name="Source"><![CDATA[--[[
@@ -17230,7 +17772,7 @@ return TestKit
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="105">
+      <Item class="ModuleScript" referent="109">
         <Properties>
           <string name="Name">Training.spec</string>
           <string name="Source"><![CDATA[local SSS = game:GetService("ServerScriptService")
@@ -17330,13 +17872,13 @@ end
       </Item>
     </Item>
   </Item>
-  <Item class="SoundService" referent="106">
+  <Item class="SoundService" referent="110">
     <Properties>
       <string name="Name">SoundService</string>
       <bool name="RespectFilteringEnabled">true</bool>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="107">
+  <Item class="StarterPlayer" referent="111">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <float name="CameraMaxZoomDistance">32</float>
@@ -17345,11 +17887,11 @@ end
       <bool name="CharacterUseJumpPower">true</bool>
       <float name="CharacterWalkSpeed">16</float>
     </Properties>
-    <Item class="StarterCharacterScripts" referent="108">
+    <Item class="StarterCharacterScripts" referent="112">
       <Properties>
         <string name="Name">StarterCharacterScripts</string>
       </Properties>
-      <Item class="Script" referent="109">
+      <Item class="Script" referent="113">
         <Properties>
           <string name="Name">Health</string>
           <token name="RunContext">0</token>
@@ -17361,19 +17903,19 @@ end
         </Properties>
       </Item>
     </Item>
-    <Item class="StarterPlayerScripts" referent="110">
+    <Item class="StarterPlayerScripts" referent="114">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="111">
+      <Item class="Folder" referent="115">
         <Properties>
           <string name="Name">Client</string>
         </Properties>
-        <Item class="Folder" referent="112">
+        <Item class="Folder" referent="116">
           <Properties>
             <string name="Name">Controllers</string>
           </Properties>
-          <Item class="ModuleScript" referent="113">
+          <Item class="ModuleScript" referent="117">
             <Properties>
               <string name="Name">AnimationController</string>
               <string name="Source"><![CDATA[--[[
@@ -17388,7 +17930,8 @@ end
 	are driven directly. Runs on every client: your own swings play instantly; other players'
 	swings arrive as "Anim" Fx events.
 
-	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flask,
+	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flip (front/back),
+	DoubleJump, Flask,
 	Cast (abilities), Hurt (flinch), plus a held Block guard while the Blocking attribute is set.
 
 	Pose values are degrees (x, y, z) applied in the parent part's space at the joint pivot:
@@ -17570,6 +18113,21 @@ function AnimationController.Build(payload): { Frame }?
 		end
 		table.insert(frames, { T = d + 0.08, Pose = NEUTRAL })
 		return frames
+	elseif anim == "Flip" then
+		-- tucked aerial flip: root spins a full turn (forward = front flip, backward = backflip)
+		local d = 0.5
+		local sign = if payload.Dir == "Back" then 1 else -1
+		local tuck = { R = { 40, 0, -35 }, L = { 40, 0, 35 }, W = { -25, 0, 0 } }
+		local frames = { { T = 0, Pose = NEUTRAL } }
+		for i = 1, 8 do
+			local a = i / 8
+			table.insert(frames, { T = d * a, Pose = { Root = { sign * 360 * a, 0, 0 }, R = tuck.R, L = tuck.L, W = tuck.W } })
+		end
+		table.insert(frames, { T = d + 0.1, Pose = NEUTRAL })
+		return frames
+	elseif anim == "DoubleJump" then
+		local up = { R = { 150, 0, 25 }, L = { 150, 0, -25 }, W = { -20, 0, 0 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = 0.1, Pose = up }, { T = 0.3, Pose = up }, { T = 0.5, Pose = NEUTRAL } }
 	elseif anim == "Flask" then
 		local p = { R = { 150, 0, -45 }, W = { 10, 0, 0 } }
 		return { { T = 0, Pose = NEUTRAL }, { T = 0.25, Pose = p }, { T = 0.75, Pose = p }, { T = 1.0, Pose = NEUTRAL } }
@@ -17713,7 +18271,7 @@ local function trackFor(character: Model, key: string, frames: { Frame }, looped
 end
 
 local function cacheKey(payload): string
-	return ("%s|%s|%s|%.2f|%.2f"):format(tostring(payload.Anim), tostring(payload.WeaponType), tostring(payload.Combo), payload.Windup or 0, payload.Recovery or 0)
+	return ("%s|%s|%s|%s|%.2f|%.2f"):format(tostring(payload.Anim), tostring(payload.WeaponType), tostring(payload.Combo), tostring(payload.Dir), payload.Windup or 0, payload.Recovery or 0)
 end
 
 function AnimationController.Play(char: Model?, payload)
@@ -17845,7 +18403,7 @@ return AnimationController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="114">
+          <Item class="ModuleScript" referent="118">
             <Properties>
               <string name="Name">AudioController</string>
               <string name="Source"><![CDATA[--[[
@@ -17943,7 +18501,7 @@ return AudioController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="115">
+          <Item class="ModuleScript" referent="119">
             <Properties>
               <string name="Name">CameraController</string>
               <string name="Source"><![CDATA[--[[
@@ -18202,7 +18760,7 @@ return CameraController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="116">
+          <Item class="ModuleScript" referent="120">
             <Properties>
               <string name="Name">ClientState</string>
               <string name="Source"><![CDATA[--[[
@@ -18302,7 +18860,7 @@ return ClientState
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="117">
+          <Item class="ModuleScript" referent="121">
             <Properties>
               <string name="Name">CombatController</string>
               <string name="Source"><![CDATA[--[[
@@ -18310,6 +18868,9 @@ return ClientState
 	Turns input into server intents and gives immediate local feedback:
 	  * light/heavy attacks (heavy charge timed locally, clamped on the server)
 	  * dodge: local dash movement for responsiveness; i-frames are granted by the server
+	  * double jump and aerial front/back flips (double jump + dodge, or dodge + jump);
+	    flips are dodges, so the server grants their i-frames
+	  * catalysts (staff/seal) cast spells while mana lasts, then switch to mana-free strikes
 	  * block (hold) / parry (tap) / sprint
 	  * abilities, flask and quick items
 	A small local action lock mirrors server timings to avoid spamming rejected requests.
@@ -18322,6 +18883,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(Shared.Config.GameConfig)
 local WeaponTypes = require(Shared.Config.WeaponTypes)
 local Net = require(Shared.Net)
+local Movement = require(Shared.Logic.Movement)
+local Catalyst = require(Shared.Logic.Catalyst)
+local UserInputService = game:GetService("UserInputService")
 
 local CombatController = {}
 
@@ -18335,6 +18899,8 @@ local lockUntil = 0
 local heavyStart: number? = nil
 local lastDodge = 0
 local blocking = false
+local comboMode: string? = nil -- mirrors the server's state.ComboMode
+local move = Movement.new()
 
 function CombatController.Init(deps)
 	CameraController = deps.CameraController
@@ -18342,6 +18908,7 @@ function CombatController.Init(deps)
 	AudioController = deps.AudioController
 	AnimationController = deps.AnimationController
 	actionRemote = Net.event("Action")
+	CombatController.StartMovement()
 end
 
 local function send(payload)
@@ -18362,21 +18929,23 @@ local function weaponType()
 	return WeaponTypes[wt] or WeaponTypes.Fist, wt
 end
 
+-- Same rule as the server (shared Catalyst module): which move fires for this press?
+local function pickMove(kind: string, chained: boolean)
+	local wt, wtName = weaponType()
+	local choice = Catalyst.choose(wt, kind, combo, chained, comboMode, player:GetAttribute("Mana") or 0)
+	comboMode = choice.Mode
+	combo = choice.Combo
+	return choice.Move, choice.AnimType or wtName
+end
+
 function CombatController.Light()
 	if not canAct() then
 		return
 	end
-	local wt = weaponType()
-	lockUntil = os.clock() + wt.Light.Windup + wt.Light.Recovery * 0.8
-	-- mirror the server's combo rule so the local swing matches what others see
-	if os.clock() - lastLightEnd <= 0.7 and combo > 0 then
-		combo = combo % #wt.Light.Motion + 1
-	else
-		combo = 1
-	end
+	local m, animType = pickMove("Light", os.clock() - lastLightEnd <= 0.7 and combo > 0)
+	lockUntil = os.clock() + m.Windup + m.Recovery * 0.8
 	lastLightEnd = lockUntil
-	local _, wtName = weaponType()
-	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = wtName, Windup = wt.Light.Windup, Recovery = wt.Light.Recovery })
+	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = animType, Windup = m.Windup, Recovery = m.Recovery })
 	send({ Kind = "Light", Aim = CameraController.AimDirection() })
 	AudioController.Play("Swing")
 end
@@ -18397,11 +18966,9 @@ function CombatController.HeavyEnd()
 	if not canAct() then
 		return
 	end
-	local wt = weaponType()
-	lockUntil = os.clock() + wt.Heavy.Windup + wt.Heavy.Recovery * 0.8
-	combo = 0
-	local _, wtName = weaponType()
-	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = wtName, Windup = wt.Heavy.Windup, Recovery = wt.Heavy.Recovery })
+	local m, animType = pickMove("Heavy", false)
+	lockUntil = os.clock() + m.Windup + m.Recovery * 0.8
+	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = animType, Windup = m.Windup, Recovery = m.Recovery })
 	-- the server measures the charge itself between HeavyStart and Heavy
 	send({ Kind = "Heavy", Aim = CameraController.AimDirection() })
 	AudioController.Play("HeavySwing")
@@ -18412,6 +18979,11 @@ function CombatController.IsCharging(): boolean
 end
 
 function CombatController.Dodge()
+	-- double jump, then dodge: flip instead of an air dash
+	if Movement.dodgePressed(move, os.clock()) == "Flip" then
+		CombatController.Flip()
+		return
+	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -18419,6 +18991,7 @@ function CombatController.Dodge()
 		return
 	end
 	if os.clock() - lastDodge < GameConfig.Combat.DodgeCooldown or (player:GetAttribute("Stamina") or 0) <= 0 then
+		move.LastDodge = -math.huge -- a refused dodge cannot be chained into a flip
 		return
 	end
 	lastDodge = os.clock()
@@ -18522,6 +19095,127 @@ function CombatController.Rep()
 	send({ Kind = "Rep" })
 end
 
+-- ===================================================================== air movement
+local function characterParts(): (Humanoid?, BasePart?)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hum or not root or hum.Health <= 0 then
+		return nil, nil
+	end
+	return hum, root
+end
+
+local function airPuff(root: BasePart, color: Color3)
+	local att = Instance.new("Attachment")
+	att.Position = Vector3.new(0, -2.5, 0)
+	att.Parent = root
+	local e = Instance.new("ParticleEmitter")
+	e.Rate = 0
+	e.Lifetime = NumberRange.new(0.35, 0.5)
+	e.Speed = NumberRange.new(6, 10)
+	e.SpreadAngle = Vector2.new(180, 20)
+	e.Size = NumberSequence.new(1.1, 0)
+	e.Transparency = NumberSequence.new(0.35, 1)
+	e.Color = ColorSequence.new(color)
+	e.LightEmission = 0.4
+	e.Parent = att
+	e:Emit(18)
+	Debris:AddItem(att, 0.8)
+end
+
+-- Front or back flip: an aerial dodge. Local physics for responsiveness, i-frames from the server.
+function CombatController.Flip()
+	local hum, root = characterParts()
+	if not hum or not root or (player:GetAttribute("Stamina") or 0) <= 0 then
+		return
+	end
+	local md = hum.MoveDirection
+	local look = root.CFrame.LookVector
+	local dir = Movement.flipDirection(md.X, md.Z, look.X, look.Z)
+	lastDodge = os.clock()
+	lockUntil = os.clock() + GameConfig.Combat.FlipLock
+	combo = 0
+	send({ Kind = "Flip", Dir = dir })
+	AnimationController.PlayLocal({ Anim = "Flip", Dir = dir })
+	local flat = Vector3.new(look.X, 0, look.Z)
+	flat = if flat.Magnitude > 0.01 then flat.Unit else Vector3.new(0, 0, -1)
+	if dir == "Back" then
+		flat = -flat
+	end
+	local duration = 0.5
+	local v = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(v.X, GameConfig.Combat.FlipHeight, v.Z)
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = 1e6
+	lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	lv.PrimaryTangentAxis = Vector3.new(1, 0, 0)
+	lv.SecondaryTangentAxis = Vector3.new(0, 0, 1)
+	lv.PlaneVelocity = Vector2.new(flat.X, flat.Z) * (GameConfig.Combat.FlipDistance / duration)
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.Parent = root
+	Debris:AddItem(att, duration + 0.1)
+	Debris:AddItem(lv, duration)
+	player:SetAttribute("Dodging", true)
+	AudioController.Play("Dodge")
+	airPuff(root, Color3.fromRGB(220, 215, 235))
+	task.delay(duration, function()
+		player:SetAttribute("Dodging", false)
+	end)
+end
+
+local function doubleJump()
+	local hum, root = characterParts()
+	if not hum or not root then
+		return
+	end
+	local v = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(v.X, GameConfig.Combat.DoubleJumpPower, v.Z)
+	AnimationController.PlayLocal({ Anim = "DoubleJump" })
+	airPuff(root, Color3.fromRGB(235, 230, 220))
+	AudioController.Play("Dodge")
+end
+
+local function watchCharacter(char: Model)
+	move = Movement.new()
+	local hum = char:WaitForChild("Humanoid", 10)
+	if not hum or not hum:IsA("Humanoid") then
+		return
+	end
+	hum.StateChanged:Connect(function(_, new)
+		if new == Enum.HumanoidStateType.Jumping or new == Enum.HumanoidStateType.Freefall then
+			Movement.tookOff(move, os.clock())
+		elseif new == Enum.HumanoidStateType.Landed or new == Enum.HumanoidStateType.Running
+			or new == Enum.HumanoidStateType.Swimming or new == Enum.HumanoidStateType.Climbing then
+			Movement.landed(move)
+		end
+	end)
+end
+
+function CombatController.OnJumpRequest()
+	local p = ClientState.Profile
+	if not p or p.Class == "" or player:GetAttribute("Health") == 0 then
+		return
+	end
+	local result = Movement.jumpRequest(move, os.clock())
+	if result == "Flip" then
+		CombatController.Flip()
+	elseif result == "DoubleJump" then
+		doubleJump()
+	end
+end
+
+function CombatController.StartMovement()
+	if player.Character then
+		task.spawn(watchCharacter, player.Character)
+	end
+	player.CharacterAdded:Connect(watchCharacter)
+	UserInputService.JumpRequest:Connect(CombatController.OnJumpRequest)
+end
+
 -- Server says we were staggered: drop local locks/charge
 function CombatController.OnStaggered(duration: number)
 	heavyStart = nil
@@ -18534,7 +19228,7 @@ return CombatController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="118">
+          <Item class="ModuleScript" referent="122">
             <Properties>
               <string name="Name">EffectsController</string>
               <string name="Source"><![CDATA[--[[
@@ -18566,17 +19260,19 @@ local HIGH_CONTRAST = {
 
 -- Per-region look. The hub and training grounds are bright and welcoming; the wilds are
 -- moodier but always readable (Ambient never drops low enough to hide enemies).
+-- Night everywhere: dark atmosphere and sky, but a strong cool ambient + moonlight so the
+-- ground, enemies and telegraphs stay easy to read. The hub is the brightest area.
 local REGION_ATMOSPHERE = {
-	sanctuary = { Density = 0.22, Color = Color3.fromRGB(215, 205, 195), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 120), Outdoor = Color3.fromRGB(175, 170, 165) },
-	training = { Density = 0.22, Color = Color3.fromRGB(215, 205, 190), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 115), Outdoor = Color3.fromRGB(175, 170, 160) },
-	pvp = { Density = 0.3, Color = Color3.fromRGB(190, 160, 150), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(115, 105, 105), Outdoor = Color3.fromRGB(160, 150, 145) },
-	forest = { Density = 0.45, Color = Color3.fromRGB(175, 190, 185), Haze = 2.2, Brightness = 2.2, Exposure = 0.2, Ambient = Color3.fromRGB(100, 108, 104), Outdoor = Color3.fromRGB(140, 150, 145) },
-	village = { Density = 0.32, Color = Color3.fromRGB(190, 165, 145), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(110, 102, 98), Outdoor = Color3.fromRGB(155, 145, 138) },
-	cemetery = { Density = 0.42, Color = Color3.fromRGB(160, 170, 195), Haze = 2, Brightness = 2.1, Exposure = 0.2, Ambient = Color3.fromRGB(98, 104, 118), Outdoor = Color3.fromRGB(135, 142, 160) },
-	caves = { Density = 0.35, Color = Color3.fromRGB(110, 110, 125), Haze = 0.8, Brightness = 2, Exposure = 0.45, Ambient = Color3.fromRGB(110, 110, 125), Outdoor = Color3.fromRGB(120, 120, 135) },
-	fortress = { Density = 0.32, Color = Color3.fromRGB(185, 160, 150), Haze = 1.5, Brightness = 2.5, Exposure = 0.25, Ambient = Color3.fromRGB(108, 100, 98), Outdoor = Color3.fromRGB(150, 140, 135) },
-	vale = { Density = 0.3, Color = Color3.fromRGB(160, 215, 200), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(100, 125, 118), Outdoor = Color3.fromRGB(145, 175, 165) },
-	wilds = { Density = 0.32, Color = Color3.fromRGB(190, 182, 185), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(108, 104, 106), Outdoor = Color3.fromRGB(155, 150, 150) },
+	sanctuary = { Density = 0.2, Color = Color3.fromRGB(80, 90, 125), Haze = 0.3, Brightness = 3.4, Exposure = 0.7, Ambient = Color3.fromRGB(130, 132, 155), Outdoor = Color3.fromRGB(170, 175, 205) },
+	training = { Density = 0.2, Color = Color3.fromRGB(85, 90, 120), Haze = 0.3, Brightness = 3.4, Exposure = 0.7, Ambient = Color3.fromRGB(130, 130, 150), Outdoor = Color3.fromRGB(170, 172, 200) },
+	pvp = { Density = 0.26, Color = Color3.fromRGB(95, 70, 85), Haze = 0.5, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(120, 112, 130), Outdoor = Color3.fromRGB(160, 150, 175) },
+	forest = { Density = 0.34, Color = Color3.fromRGB(55, 80, 85), Haze = 0.9, Brightness = 2.8, Exposure = 0.55, Ambient = Color3.fromRGB(108, 120, 125), Outdoor = Color3.fromRGB(145, 160, 170) },
+	village = { Density = 0.28, Color = Color3.fromRGB(90, 75, 85), Haze = 0.6, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(118, 112, 125), Outdoor = Color3.fromRGB(158, 152, 172) },
+	cemetery = { Density = 0.34, Color = Color3.fromRGB(65, 75, 110), Haze = 0.9, Brightness = 2.8, Exposure = 0.55, Ambient = Color3.fromRGB(108, 115, 140), Outdoor = Color3.fromRGB(145, 155, 185) },
+	caves = { Density = 0.3, Color = Color3.fromRGB(55, 58, 75), Haze = 0.5, Brightness = 2.6, Exposure = 0.65, Ambient = Color3.fromRGB(118, 118, 138), Outdoor = Color3.fromRGB(128, 128, 150) },
+	fortress = { Density = 0.28, Color = Color3.fromRGB(90, 70, 75), Haze = 0.6, Brightness = 2.9, Exposure = 0.55, Ambient = Color3.fromRGB(116, 108, 120), Outdoor = Color3.fromRGB(155, 145, 165) },
+	vale = { Density = 0.26, Color = Color3.fromRGB(55, 95, 100), Haze = 0.5, Brightness = 3.1, Exposure = 0.6, Ambient = Color3.fromRGB(105, 130, 130), Outdoor = Color3.fromRGB(145, 180, 180) },
+	wilds = { Density = 0.26, Color = Color3.fromRGB(75, 82, 110), Haze = 0.5, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(115, 115, 135), Outdoor = Color3.fromRGB(158, 160, 188) },
 }
 
 local function settings()
@@ -18752,8 +19448,8 @@ function EffectsController.Init(deps)
 	HUD.ArenaTheme = function(theme)
 		if theme then
 			-- arenas: themed fog colour, but bright enough to read every telegraph
-			applyAtmosphere({ Density = 0.3, Color = theme.Fog, Haze = 1.2, Brightness = 2.6, Exposure = 0.35,
-				Ambient = Color3.fromRGB(115, 110, 115), Outdoor = Color3.fromRGB(150, 145, 150) })
+			applyAtmosphere({ Density = 0.26, Color = theme.Fog:Lerp(Color3.fromRGB(40, 45, 70), 0.5), Haze = 0.6, Brightness = 3, Exposure = 0.6,
+				Ambient = Color3.fromRGB(125, 122, 140), Outdoor = Color3.fromRGB(160, 160, 185) })
 		else
 			lastRegion = nil
 			applyAtmosphere(REGION_ATMOSPHERE[player:GetAttribute("Region") or "wilds"] or REGION_ATMOSPHERE.wilds)
@@ -18765,7 +19461,7 @@ return EffectsController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="119">
+          <Item class="ModuleScript" referent="123">
             <Properties>
               <string name="Name">HUDController</string>
               <string name="Source"><![CDATA[--[[
@@ -18885,7 +19581,7 @@ local function buildTraining()
 end
 
 local function buildControls()
-	controlsLabel = UIKit.label("", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14), Size = UDim2.fromOffset(330, 150), TextSize = 14, TextColor3 = T.Muted,
+	controlsLabel = UIKit.label("", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14), Size = UDim2.fromOffset(430, 150), TextSize = 14, TextColor3 = T.Muted,
 		TextXAlignment = Enum.TextXAlignment.Right, TextYAlignment = Enum.TextYAlignment.Bottom, Parent = gui })
 end
 
@@ -18893,11 +19589,13 @@ local function refreshControls()
 	local s = ClientState.Settings
 	controlsLabel.Visible = (s == nil or s.ShowControls ~= false) and not UserInputService.TouchEnabled
 	if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
-		controlsLabel.Text = "R1 attack  R2 heavy  L1 block  L2 parry\nB dodge  R3 lock-on  X flask  Y/Up skills\nSelect: menu"
+		controlsLabel.Text = "R1 attack  R2 heavy  L1 block  L2 parry\nB dodge  A x2 double jump  (+B: flip)\nR3 lock-on  X flask  Y/Up skills  Select: menu"
 	else
-		controlsLabel.Text = "LMB attack  R heavy (hold)  RMB block  F parry\nQ dodge  Shift sprint  T lock-on  H flask\nZ/X skills  1-3 items  Tab menu  Alt cursor"
+		controlsLabel.Text = "LMB attack  R heavy (hold)  RMB block  F parry\nQ dodge  Space x2 double jump (+Q: flip, S+Q: backflip)\nShift sprint  T lock-on  H flask  Z/X skills  1-3 items  Tab menu"
 	end
 end
+
+local lastTechniqueMode = "Spell"
 
 -- ===================================================================== messages
 function HUDController.Toast(text: string, kind: string?)
@@ -19113,6 +19811,21 @@ local function onFx(payload)
 		HUDController.VfxController.EntityHit(payload.Model, payload.Position, payload.DamageType, payload.Crit, payload.Staggered, payload.Heavy, payload.Died)
 	elseif t == "Anim" then
 		HUDController.AnimationController.PlayFor(payload.UserId, payload)
+	elseif t == "Technique" then
+		-- name of the spell / staff technique that just fired
+		local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if r then
+			local color = if payload.Mode == "Melee" then Color3.fromRGB(230, 205, 160) else Color3.fromRGB(150, 175, 255)
+			popText((r :: BasePart).Position + Vector3.new(0, 4, 0), payload.Name, color, 16)
+		end
+		if payload.Mode ~= lastTechniqueMode then
+			if payload.Mode == "Melee" then
+				HUDController.Toast("Out of mana: striking with your catalyst. Hits restore mana.", "Warning")
+			elseif lastTechniqueMode == "Melee" then
+				HUDController.Toast("Mana restored: spells ready.", "Quest")
+			end
+			lastTechniqueMode = payload.Mode
+		end
 	elseif t == "Blink" then
 		AudioController.Play("Dodge", payload.Position)
 	end
@@ -19392,7 +20105,7 @@ return HUDController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="120">
+          <Item class="ModuleScript" referent="124">
             <Properties>
               <string name="Name">InputController</string>
               <string name="Source"><![CDATA[--[[
@@ -19599,7 +20312,7 @@ return InputController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="121">
+          <Item class="ModuleScript" referent="125">
             <Properties>
               <string name="Name">MenuController</string>
               <string name="Source"><![CDATA[--[[
@@ -20681,7 +21394,7 @@ return MenuController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="122">
+          <Item class="ModuleScript" referent="126">
             <Properties>
               <string name="Name">UIKit</string>
               <string name="Source"><![CDATA[--[[
@@ -20852,7 +21565,7 @@ return UIKit
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="123">
+          <Item class="ModuleScript" referent="127">
             <Properties>
               <string name="Name">VfxController</string>
               <string name="Source"><![CDATA[--[[
@@ -21107,7 +21820,7 @@ return VfxController
             </Properties>
           </Item>
         </Item>
-        <Item class="LocalScript" referent="124">
+        <Item class="LocalScript" referent="128">
           <Properties>
             <string name="Name">Main</string>
             <string name="Source"><![CDATA[--[[
@@ -21163,7 +21876,7 @@ end
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="125">
+  <Item class="Workspace" referent="129">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">196.2</float>

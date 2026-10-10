@@ -27,17 +27,19 @@ local HIGH_CONTRAST = {
 
 -- Per-region look. The hub and training grounds are bright and welcoming; the wilds are
 -- moodier but always readable (Ambient never drops low enough to hide enemies).
+-- Night everywhere: dark atmosphere and sky, but a strong cool ambient + moonlight so the
+-- ground, enemies and telegraphs stay easy to read. The hub is the brightest area.
 local REGION_ATMOSPHERE = {
-	sanctuary = { Density = 0.22, Color = Color3.fromRGB(215, 205, 195), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 120), Outdoor = Color3.fromRGB(175, 170, 165) },
-	training = { Density = 0.22, Color = Color3.fromRGB(215, 205, 190), Haze = 0.8, Brightness = 3.2, Exposure = 0.45, Ambient = Color3.fromRGB(125, 120, 115), Outdoor = Color3.fromRGB(175, 170, 160) },
-	pvp = { Density = 0.3, Color = Color3.fromRGB(190, 160, 150), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(115, 105, 105), Outdoor = Color3.fromRGB(160, 150, 145) },
-	forest = { Density = 0.45, Color = Color3.fromRGB(175, 190, 185), Haze = 2.2, Brightness = 2.2, Exposure = 0.2, Ambient = Color3.fromRGB(100, 108, 104), Outdoor = Color3.fromRGB(140, 150, 145) },
-	village = { Density = 0.32, Color = Color3.fromRGB(190, 165, 145), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(110, 102, 98), Outdoor = Color3.fromRGB(155, 145, 138) },
-	cemetery = { Density = 0.42, Color = Color3.fromRGB(160, 170, 195), Haze = 2, Brightness = 2.1, Exposure = 0.2, Ambient = Color3.fromRGB(98, 104, 118), Outdoor = Color3.fromRGB(135, 142, 160) },
-	caves = { Density = 0.35, Color = Color3.fromRGB(110, 110, 125), Haze = 0.8, Brightness = 2, Exposure = 0.45, Ambient = Color3.fromRGB(110, 110, 125), Outdoor = Color3.fromRGB(120, 120, 135) },
-	fortress = { Density = 0.32, Color = Color3.fromRGB(185, 160, 150), Haze = 1.5, Brightness = 2.5, Exposure = 0.25, Ambient = Color3.fromRGB(108, 100, 98), Outdoor = Color3.fromRGB(150, 140, 135) },
-	vale = { Density = 0.3, Color = Color3.fromRGB(160, 215, 200), Haze = 1.2, Brightness = 2.8, Exposure = 0.3, Ambient = Color3.fromRGB(100, 125, 118), Outdoor = Color3.fromRGB(145, 175, 165) },
-	wilds = { Density = 0.32, Color = Color3.fromRGB(190, 182, 185), Haze = 1.4, Brightness = 2.6, Exposure = 0.25, Ambient = Color3.fromRGB(108, 104, 106), Outdoor = Color3.fromRGB(155, 150, 150) },
+	sanctuary = { Density = 0.2, Color = Color3.fromRGB(80, 90, 125), Haze = 0.3, Brightness = 3.4, Exposure = 0.7, Ambient = Color3.fromRGB(130, 132, 155), Outdoor = Color3.fromRGB(170, 175, 205) },
+	training = { Density = 0.2, Color = Color3.fromRGB(85, 90, 120), Haze = 0.3, Brightness = 3.4, Exposure = 0.7, Ambient = Color3.fromRGB(130, 130, 150), Outdoor = Color3.fromRGB(170, 172, 200) },
+	pvp = { Density = 0.26, Color = Color3.fromRGB(95, 70, 85), Haze = 0.5, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(120, 112, 130), Outdoor = Color3.fromRGB(160, 150, 175) },
+	forest = { Density = 0.34, Color = Color3.fromRGB(55, 80, 85), Haze = 0.9, Brightness = 2.8, Exposure = 0.55, Ambient = Color3.fromRGB(108, 120, 125), Outdoor = Color3.fromRGB(145, 160, 170) },
+	village = { Density = 0.28, Color = Color3.fromRGB(90, 75, 85), Haze = 0.6, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(118, 112, 125), Outdoor = Color3.fromRGB(158, 152, 172) },
+	cemetery = { Density = 0.34, Color = Color3.fromRGB(65, 75, 110), Haze = 0.9, Brightness = 2.8, Exposure = 0.55, Ambient = Color3.fromRGB(108, 115, 140), Outdoor = Color3.fromRGB(145, 155, 185) },
+	caves = { Density = 0.3, Color = Color3.fromRGB(55, 58, 75), Haze = 0.5, Brightness = 2.6, Exposure = 0.65, Ambient = Color3.fromRGB(118, 118, 138), Outdoor = Color3.fromRGB(128, 128, 150) },
+	fortress = { Density = 0.28, Color = Color3.fromRGB(90, 70, 75), Haze = 0.6, Brightness = 2.9, Exposure = 0.55, Ambient = Color3.fromRGB(116, 108, 120), Outdoor = Color3.fromRGB(155, 145, 165) },
+	vale = { Density = 0.26, Color = Color3.fromRGB(55, 95, 100), Haze = 0.5, Brightness = 3.1, Exposure = 0.6, Ambient = Color3.fromRGB(105, 130, 130), Outdoor = Color3.fromRGB(145, 180, 180) },
+	wilds = { Density = 0.26, Color = Color3.fromRGB(75, 82, 110), Haze = 0.5, Brightness = 3, Exposure = 0.55, Ambient = Color3.fromRGB(115, 115, 135), Outdoor = Color3.fromRGB(158, 160, 188) },
 }
 
 local function settings()
@@ -213,8 +215,8 @@ function EffectsController.Init(deps)
 	HUD.ArenaTheme = function(theme)
 		if theme then
 			-- arenas: themed fog colour, but bright enough to read every telegraph
-			applyAtmosphere({ Density = 0.3, Color = theme.Fog, Haze = 1.2, Brightness = 2.6, Exposure = 0.35,
-				Ambient = Color3.fromRGB(115, 110, 115), Outdoor = Color3.fromRGB(150, 145, 150) })
+			applyAtmosphere({ Density = 0.26, Color = theme.Fog:Lerp(Color3.fromRGB(40, 45, 70), 0.5), Haze = 0.6, Brightness = 3, Exposure = 0.6,
+				Ambient = Color3.fromRGB(125, 122, 140), Outdoor = Color3.fromRGB(160, 160, 185) })
 		else
 			lastRegion = nil
 			applyAtmosphere(REGION_ATMOSPHERE[player:GetAttribute("Region") or "wilds"] or REGION_ATMOSPHERE.wilds)

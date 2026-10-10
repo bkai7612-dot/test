@@ -10,7 +10,8 @@
 	are driven directly. Runs on every client: your own swings play instantly; other players'
 	swings arrive as "Anim" Fx events.
 
-	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flask,
+	Animations: Light (3-hit combo per weapon family), Heavy, Parry, Dodge (roll), Flip (front/back),
+	DoubleJump, Flask,
 	Cast (abilities), Hurt (flinch), plus a held Block guard while the Blocking attribute is set.
 
 	Pose values are degrees (x, y, z) applied in the parent part's space at the joint pivot:
@@ -192,6 +193,21 @@ function AnimationController.Build(payload): { Frame }?
 		end
 		table.insert(frames, { T = d + 0.08, Pose = NEUTRAL })
 		return frames
+	elseif anim == "Flip" then
+		-- tucked aerial flip: root spins a full turn (forward = front flip, backward = backflip)
+		local d = 0.5
+		local sign = if payload.Dir == "Back" then 1 else -1
+		local tuck = { R = { 40, 0, -35 }, L = { 40, 0, 35 }, W = { -25, 0, 0 } }
+		local frames = { { T = 0, Pose = NEUTRAL } }
+		for i = 1, 8 do
+			local a = i / 8
+			table.insert(frames, { T = d * a, Pose = { Root = { sign * 360 * a, 0, 0 }, R = tuck.R, L = tuck.L, W = tuck.W } })
+		end
+		table.insert(frames, { T = d + 0.1, Pose = NEUTRAL })
+		return frames
+	elseif anim == "DoubleJump" then
+		local up = { R = { 150, 0, 25 }, L = { 150, 0, -25 }, W = { -20, 0, 0 } }
+		return { { T = 0, Pose = NEUTRAL }, { T = 0.1, Pose = up }, { T = 0.3, Pose = up }, { T = 0.5, Pose = NEUTRAL } }
 	elseif anim == "Flask" then
 		local p = { R = { 150, 0, -45 }, W = { 10, 0, 0 } }
 		return { { T = 0, Pose = NEUTRAL }, { T = 0.25, Pose = p }, { T = 0.75, Pose = p }, { T = 1.0, Pose = NEUTRAL } }
@@ -335,7 +351,7 @@ local function trackFor(character: Model, key: string, frames: { Frame }, looped
 end
 
 local function cacheKey(payload): string
-	return ("%s|%s|%s|%.2f|%.2f"):format(tostring(payload.Anim), tostring(payload.WeaponType), tostring(payload.Combo), payload.Windup or 0, payload.Recovery or 0)
+	return ("%s|%s|%s|%s|%.2f|%.2f"):format(tostring(payload.Anim), tostring(payload.WeaponType), tostring(payload.Combo), tostring(payload.Dir), payload.Windup or 0, payload.Recovery or 0)
 end
 
 function AnimationController.Play(char: Model?, payload)

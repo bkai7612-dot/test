@@ -76,6 +76,13 @@ GameConfig.Combat = {
 	DodgeCooldown = 0.5,
 	DodgeIFrames = 0.32,
 	DodgeDistance = 16,
+	-- aerial flips (double jump + dodge, or dodge + jump)
+	FlipChainWindow = 0.45, -- jump this soon after a dodge to turn it into a flip
+	FlipChainCost = 8,
+	FlipLock = 0.45,
+	FlipDistance = 18,
+	FlipHeight = 34, -- upward speed given by a flip (studs/s)
+	DoubleJumpPower = 46, -- upward speed of the double jump (studs/s)
 	LatencyGrace = 0.15, -- extra time allowed on dodge/parry windows for network latency
 	ParryWindow = 0.22,
 	ParryCooldown = 0.9,

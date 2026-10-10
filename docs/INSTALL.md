@@ -46,6 +46,12 @@ Open `TowerOfTheFallen.rbxlx` in Roblox Studio.
 LUAU=/path/to/luau tools/run_tests.sh
 ```
 
+**Integration scenarios (no Studio):** these run the real client `CombatController` and the server `CombatService` against a mocked Roblox runtime with a simulated clock. They cover the double jump, both flip combos, flip i-frames and cooldown, staff spells (projectile count, spread, pierce, mana costs) and the mana-free strikes (mana siphon).
+
+```bash
+LUAU=/path/to/luau tools/run_integration.sh
+```
+
 **In Studio:** select `Workspace`, add a **boolean attribute `RunTests = true`**, then press Play. Results print to Output and are reported through `TestService`.
 
 ## 6. Monetisation configuration (optional)

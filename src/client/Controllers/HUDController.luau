@@ -115,7 +115,7 @@ local function buildTraining()
 end
 
 local function buildControls()
-	controlsLabel = UIKit.label("", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14), Size = UDim2.fromOffset(330, 150), TextSize = 14, TextColor3 = T.Muted,
+	controlsLabel = UIKit.label("", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14), Size = UDim2.fromOffset(430, 150), TextSize = 14, TextColor3 = T.Muted,
 		TextXAlignment = Enum.TextXAlignment.Right, TextYAlignment = Enum.TextYAlignment.Bottom, Parent = gui })
 end
 
@@ -123,11 +123,13 @@ local function refreshControls()
 	local s = ClientState.Settings
 	controlsLabel.Visible = (s == nil or s.ShowControls ~= false) and not UserInputService.TouchEnabled
 	if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
-		controlsLabel.Text = "R1 attack  R2 heavy  L1 block  L2 parry\nB dodge  R3 lock-on  X flask  Y/Up skills\nSelect: menu"
+		controlsLabel.Text = "R1 attack  R2 heavy  L1 block  L2 parry\nB dodge  A x2 double jump  (+B: flip)\nR3 lock-on  X flask  Y/Up skills  Select: menu"
 	else
-		controlsLabel.Text = "LMB attack  R heavy (hold)  RMB block  F parry\nQ dodge  Shift sprint  T lock-on  H flask\nZ/X skills  1-3 items  Tab menu  Alt cursor"
+		controlsLabel.Text = "LMB attack  R heavy (hold)  RMB block  F parry\nQ dodge  Space x2 double jump (+Q: flip, S+Q: backflip)\nShift sprint  T lock-on  H flask  Z/X skills  1-3 items  Tab menu"
 	end
 end
+
+local lastTechniqueMode = "Spell"
 
 -- ===================================================================== messages
 function HUDController.Toast(text: string, kind: string?)
@@ -343,6 +345,21 @@ local function onFx(payload)
 		HUDController.VfxController.EntityHit(payload.Model, payload.Position, payload.DamageType, payload.Crit, payload.Staggered, payload.Heavy, payload.Died)
 	elseif t == "Anim" then
 		HUDController.AnimationController.PlayFor(payload.UserId, payload)
+	elseif t == "Technique" then
+		-- name of the spell / staff technique that just fired
+		local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if r then
+			local color = if payload.Mode == "Melee" then Color3.fromRGB(230, 205, 160) else Color3.fromRGB(150, 175, 255)
+			popText((r :: BasePart).Position + Vector3.new(0, 4, 0), payload.Name, color, 16)
+		end
+		if payload.Mode ~= lastTechniqueMode then
+			if payload.Mode == "Melee" then
+				HUDController.Toast("Out of mana: striking with your catalyst. Hits restore mana.", "Warning")
+			elseif lastTechniqueMode == "Melee" then
+				HUDController.Toast("Mana restored: spells ready.", "Quest")
+			end
+			lastTechniqueMode = payload.Mode
+		end
 	elseif t == "Blink" then
 		AudioController.Play("Dodge", payload.Position)
 	end

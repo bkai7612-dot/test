@@ -17,6 +17,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(Shared.Config.GameConfig)
 local WeaponTypes = require(Shared.Config.WeaponTypes)
 local Formulas = require(Shared.Logic.Formulas)
+local Catalyst = require(Shared.Logic.Catalyst)
 
 local C = GameConfig.Combat
 local NEG = -1e9
@@ -116,29 +117,27 @@ function CombatCore.attack(state, kind: string, weaponType: string, now: number,
 		return false, "Busy"
 	end
 	local wt = WeaponTypes[weaponType] or WeaponTypes.Fist
-	local move = wt[kind]
-	local cost = (if kind == "Light" then C.LightAttackCost else C.HeavyAttackCost) * (wt.StaminaMult or 1)
-	local manaCost = move.Mana or 0
-	if manaCost > 0 and state.Mana < manaCost then
-		return false, "NoMana"
-	end
 	if state.Stamina <= GameConfig.Stamina.ExhaustedThreshold then
 		return false, "NoStamina"
 	end
-	-- combo
+	local chained = kind == "Light" and now - state.LastAttackEnd <= 0.7 and state.ComboIndex > 0
+	-- catalysts cast a spell per step, or fall back to mana-free strikes (shared with the client)
+	local choice = Catalyst.choose(wt, kind, state.ComboIndex, chained, state.ComboMode, state.Mana)
+	if choice.ManaCost > state.Mana then
+		return false, "NoMana"
+	end
+	local mode, move, manaCost = choice.Mode, choice.Move, choice.ManaCost
+	state.ComboMode = mode
+	state.ComboIndex = choice.Combo
+	local cost = (if kind == "Light" then C.LightAttackCost else C.HeavyAttackCost) * (wt.StaminaMult or 1)
 	local motion
 	if kind == "Light" then
-		if now - state.LastAttackEnd <= 0.7 and state.ComboIndex > 0 then
-			state.ComboIndex = state.ComboIndex % #move.Motion + 1
-		else
-			state.ComboIndex = 1
-		end
 		motion = move.Motion[state.ComboIndex]
 	else
-		state.ComboIndex = 0
 		local c = math.clamp(tonumber(charge) or 0, 0, C.HeavyChargeMax)
 		motion = move.Motion * (1 + C.HeavyChargeBonus * (c / C.HeavyChargeMax))
 	end
+	local spell, name = choice.Spell, choice.Name
 	CombatCore.spendStamina(state, cost, now)
 	state.Mana -= manaCost
 	state.Blocking = false
@@ -156,7 +155,12 @@ function CombatCore.attack(state, kind: string, weaponType: string, now: number,
 		StaminaCost = cost,
 		ManaCost = manaCost,
 		Combo = state.ComboIndex,
-		Ranged = wt.Ranged == true,
+		Ranged = wt.Ranged == true and mode ~= "Melee",
+		Mode = mode, -- "Weapon" | "Spell" | "Melee" (catalyst out of mana)
+		Spell = spell,
+		Name = name,
+		Range = if mode == "Melee" then (move.Range or wt.Fallback.Range) else nil,
+		Arc = if mode == "Melee" then (move.Arc or wt.Fallback.Arc) else nil,
 	}
 end
 
@@ -199,6 +203,38 @@ function CombatCore.dodge(state, now: number, costMult: number?)
 	state.ActionLockUntil = math.max(now + 0.35, 0)
 	state.LastAttackEnd = NEG
 	return true, { IFrames = C.DodgeIFrames }
+end
+
+--[[
+	Aerial flip (front or back): a dodge performed in the air.
+	* Chained: within FlipChainWindow of a dodge (dodge, then jump) the flip extends that dodge
+	  for a small extra cost, once per dodge.
+	* Fresh: otherwise (double jump, then dodge) it costs a normal dodge and obeys its cooldown.
+	Either way it grants a full set of dodge i-frames from the moment of the flip.
+]]
+function CombatCore.flip(state, now: number, costMult: number?)
+	if state.Dead or now < state.StaggeredUntil then
+		return false, "Busy"
+	end
+	if now < state.DodgeCancelFrom then
+		return false, "Busy"
+	end
+	local chained = now - state.LastDodge <= C.FlipChainWindow and state.FlipChainedFrom ~= state.LastDodge
+	if not chained and now - state.LastDodge < C.DodgeCooldown then
+		return false, "Cooldown"
+	end
+	local cost = (if chained then C.FlipChainCost else C.DodgeCost) * (costMult or 1)
+	if not CombatCore.spendStamina(state, cost, now) then
+		return false, "NoStamina"
+	end
+	state.LastDodge = now
+	-- a chained flip consumes the chain; a fresh flip cannot be chained into another flip
+	state.FlipChainedFrom = now
+	state.Blocking = false
+	state.ChargeStart = nil
+	state.ActionLockUntil = math.max(state.ActionLockUntil, now + C.FlipLock)
+	state.LastAttackEnd = NEG
+	return true, { IFrames = C.DodgeIFrames, Chained = chained, StaminaCost = cost }
 end
 
 function CombatCore.parry(state, now: number, parryBonus: number?)

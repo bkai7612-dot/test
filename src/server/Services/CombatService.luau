@@ -1,7 +1,7 @@
 --[[
 	CombatService
 	Server-authoritative combat. Clients send *intents* through the Action remote
-	({ Kind = "Light" | "Heavy" | "Dodge" | "Parry" | "Block" | "Sprint" | "Ability" | "Flask" | "Item" }).
+	({ Kind = "Light" | "Heavy" | "Dodge" | "Flip" | "Parry" | "Block" | "Sprint" | "Ability" | "Flask" | "Item" }).
 	The server validates state, timing, stamina/mana, ownership and cooldowns; computes all
 	damage itself; and resolves hits using server positions. Clients never send damage numbers.
 
@@ -341,20 +341,47 @@ local function onAttack(player: Player, rt, kind: string, payload)
 		return
 	end
 	local seq = c.AttackSeq or 0
-	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = stats.WeaponType, Windup = info.Windup, Recovery = info.Recovery })
+	local wt = WeaponTypes[stats.WeaponType] or WeaponTypes.Fist
+	local animType = if info.Mode == "Melee" and wt.Fallback then wt.Fallback.AnimType else stats.WeaponType
+	broadcastAnim(player, rt, { Anim = kind, Combo = info.Combo, WeaponType = animType, Windup = info.Windup, Recovery = info.Recovery })
+	if info.Name then
+		-- tell the caster which technique fired (spell names, or the mana-free staff strikes)
+		fx:FireClient(player, { Type = "Technique", Name = info.Name, Mode = info.Mode })
+	end
 	local aim = payload.Aim
 	task.delay(info.Windup, function()
 		if c.Dead or (c.AttackSeq or 0) ~= seq or not rt.Root or not rt.Root.Parent then
 			return
 		end
-		local wt = WeaponTypes[stats.WeaponType] or WeaponTypes.Fist
 		local power = stats.AttackRating
 		local dtype = stats.WeaponDamageType
-		if wt.Ranged then
-			fireProjectile(player, rt, aim, wt.ProjectileSpeed, wt.ProjectileRadius * (if kind == "Heavy" then 1.4 else 1), wt.MaxRange,
-				power, info.Motion, info.Poise, dtype, stats.WeaponStatus, DAMAGE_COLORS[dtype] or DAMAGE_COLORS.Physical, kind == "Heavy" and wt.Catalyst)
+		local spell = info.Spell or {}
+		if info.Mode == "Melee" then
+			-- out of mana: physical strikes that siphon mana back on hit
+			local fb = wt.Fallback
+			local hits = meleeSweep(player, rt, info.Range, info.Arc, power, info.Motion, info.Poise, fb.DamageType or "Physical", stats.WeaponStatus)
+			if hits > 0 and fb.ManaOnHit then
+				c.Mana = math.min(c.MaxMana, c.Mana + fb.ManaOnHit * hits)
+			end
+		elseif wt.Ranged then
+			local shots = spell.Shots or 1
+			local spread = math.rad(spell.Spread or 0)
+			local radius = wt.ProjectileRadius * (spell.Size or (if kind == "Heavy" then 1.4 else 1))
+			local speed = wt.ProjectileSpeed * (spell.Speed or 1)
+			local pierce = spell.Pierce == true or (kind == "Heavy" and wt.Catalyst == true)
+			local baseAim = if validVector(aim) then aim.Unit else rt.Root.CFrame.LookVector
+			for i = 1, shots do
+				local dir = baseAim
+				if shots > 1 then
+					local offset = -spread / 2 + spread * (i - 1) / (shots - 1)
+					dir = CFrame.fromAxisAngle(Vector3.yAxis, offset):VectorToWorldSpace(baseAim)
+				end
+				fireProjectile(player, rt, dir, speed, radius, wt.MaxRange, power, info.Motion, info.Poise, dtype, stats.WeaponStatus,
+					DAMAGE_COLORS[dtype] or DAMAGE_COLORS.Physical, pierce)
+			end
 		else
-			meleeSweep(player, rt, wt.Range * (if kind == "Heavy" then 1.1 else 1), wt.Arc, power, info.Motion, info.Poise, dtype, stats.WeaponStatus)
+			local range = spell.Range or wt.Range * (if kind == "Heavy" then 1.1 else 1)
+			meleeSweep(player, rt, range, spell.Arc or wt.Arc, power, info.Motion, info.Poise, dtype, stats.WeaponStatus)
 		end
 	end)
 end
@@ -367,6 +394,18 @@ local function onDodge(player: Player, rt, payload)
 		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames })
 	else
 		fx:FireClient(player, { Type = "ActionDenied", Action = "Dodge", Reason = info })
+	end
+end
+
+local function onFlip(player: Player, rt, payload)
+	local dir = if payload.Dir == "Back" then "Back" else "Front"
+	local ok, info = CombatCore.flip(rt.Combat, now(), rt.Stats.DodgeCostMult)
+	if ok then
+		AchievementCore.increment(rt.Profile, "Dodges")
+		broadcastAnim(player, rt, { Anim = "Flip", Dir = dir })
+		fx:FireClient(player, { Type = "DodgeOk", IFrames = info.IFrames, Flip = dir })
+	else
+		fx:FireClient(player, { Type = "ActionDenied", Action = "Flip", Reason = info })
 	end
 end
 
@@ -619,6 +658,8 @@ local function onAction(player: Player, payload)
 		CombatCore.beginCharge(rt.Combat, workspace:GetServerTimeNow())
 	elseif kind == "Dodge" then
 		onDodge(player, rt, payload)
+	elseif kind == "Flip" then
+		onFlip(player, rt, payload)
 	elseif kind == "Parry" then
 		onParry(player, rt)
 	elseif kind == "Block" then

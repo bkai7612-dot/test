@@ -3,6 +3,9 @@
 	Turns input into server intents and gives immediate local feedback:
 	  * light/heavy attacks (heavy charge timed locally, clamped on the server)
 	  * dodge: local dash movement for responsiveness; i-frames are granted by the server
+	  * double jump and aerial front/back flips (double jump + dodge, or dodge + jump);
+	    flips are dodges, so the server grants their i-frames
+	  * catalysts (staff/seal) cast spells while mana lasts, then switch to mana-free strikes
 	  * block (hold) / parry (tap) / sprint
 	  * abilities, flask and quick items
 	A small local action lock mirrors server timings to avoid spamming rejected requests.
@@ -15,6 +18,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(Shared.Config.GameConfig)
 local WeaponTypes = require(Shared.Config.WeaponTypes)
 local Net = require(Shared.Net)
+local Movement = require(Shared.Logic.Movement)
+local Catalyst = require(Shared.Logic.Catalyst)
+local UserInputService = game:GetService("UserInputService")
 
 local CombatController = {}
 
@@ -28,6 +34,8 @@ local lockUntil = 0
 local heavyStart: number? = nil
 local lastDodge = 0
 local blocking = false
+local comboMode: string? = nil -- mirrors the server's state.ComboMode
+local move = Movement.new()
 
 function CombatController.Init(deps)
 	CameraController = deps.CameraController
@@ -35,6 +43,7 @@ function CombatController.Init(deps)
 	AudioController = deps.AudioController
 	AnimationController = deps.AnimationController
 	actionRemote = Net.event("Action")
+	CombatController.StartMovement()
 end
 
 local function send(payload)
@@ -55,21 +64,23 @@ local function weaponType()
 	return WeaponTypes[wt] or WeaponTypes.Fist, wt
 end
 
+-- Same rule as the server (shared Catalyst module): which move fires for this press?
+local function pickMove(kind: string, chained: boolean)
+	local wt, wtName = weaponType()
+	local choice = Catalyst.choose(wt, kind, combo, chained, comboMode, player:GetAttribute("Mana") or 0)
+	comboMode = choice.Mode
+	combo = choice.Combo
+	return choice.Move, choice.AnimType or wtName
+end
+
 function CombatController.Light()
 	if not canAct() then
 		return
 	end
-	local wt = weaponType()
-	lockUntil = os.clock() + wt.Light.Windup + wt.Light.Recovery * 0.8
-	-- mirror the server's combo rule so the local swing matches what others see
-	if os.clock() - lastLightEnd <= 0.7 and combo > 0 then
-		combo = combo % #wt.Light.Motion + 1
-	else
-		combo = 1
-	end
+	local m, animType = pickMove("Light", os.clock() - lastLightEnd <= 0.7 and combo > 0)
+	lockUntil = os.clock() + m.Windup + m.Recovery * 0.8
 	lastLightEnd = lockUntil
-	local _, wtName = weaponType()
-	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = wtName, Windup = wt.Light.Windup, Recovery = wt.Light.Recovery })
+	AnimationController.PlayLocal({ Anim = "Light", Combo = combo, WeaponType = animType, Windup = m.Windup, Recovery = m.Recovery })
 	send({ Kind = "Light", Aim = CameraController.AimDirection() })
 	AudioController.Play("Swing")
 end
@@ -90,11 +101,9 @@ function CombatController.HeavyEnd()
 	if not canAct() then
 		return
 	end
-	local wt = weaponType()
-	lockUntil = os.clock() + wt.Heavy.Windup + wt.Heavy.Recovery * 0.8
-	combo = 0
-	local _, wtName = weaponType()
-	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = wtName, Windup = wt.Heavy.Windup, Recovery = wt.Heavy.Recovery })
+	local m, animType = pickMove("Heavy", false)
+	lockUntil = os.clock() + m.Windup + m.Recovery * 0.8
+	AnimationController.PlayLocal({ Anim = "Heavy", WeaponType = animType, Windup = m.Windup, Recovery = m.Recovery })
 	-- the server measures the charge itself between HeavyStart and Heavy
 	send({ Kind = "Heavy", Aim = CameraController.AimDirection() })
 	AudioController.Play("HeavySwing")
@@ -105,6 +114,11 @@ function CombatController.IsCharging(): boolean
 end
 
 function CombatController.Dodge()
+	-- double jump, then dodge: flip instead of an air dash
+	if Movement.dodgePressed(move, os.clock()) == "Flip" then
+		CombatController.Flip()
+		return
+	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -112,6 +126,7 @@ function CombatController.Dodge()
 		return
 	end
 	if os.clock() - lastDodge < GameConfig.Combat.DodgeCooldown or (player:GetAttribute("Stamina") or 0) <= 0 then
+		move.LastDodge = -math.huge -- a refused dodge cannot be chained into a flip
 		return
 	end
 	lastDodge = os.clock()
@@ -213,6 +228,127 @@ end
 
 function CombatController.Rep()
 	send({ Kind = "Rep" })
+end
+
+-- ===================================================================== air movement
+local function characterParts(): (Humanoid?, BasePart?)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hum or not root or hum.Health <= 0 then
+		return nil, nil
+	end
+	return hum, root
+end
+
+local function airPuff(root: BasePart, color: Color3)
+	local att = Instance.new("Attachment")
+	att.Position = Vector3.new(0, -2.5, 0)
+	att.Parent = root
+	local e = Instance.new("ParticleEmitter")
+	e.Rate = 0
+	e.Lifetime = NumberRange.new(0.35, 0.5)
+	e.Speed = NumberRange.new(6, 10)
+	e.SpreadAngle = Vector2.new(180, 20)
+	e.Size = NumberSequence.new(1.1, 0)
+	e.Transparency = NumberSequence.new(0.35, 1)
+	e.Color = ColorSequence.new(color)
+	e.LightEmission = 0.4
+	e.Parent = att
+	e:Emit(18)
+	Debris:AddItem(att, 0.8)
+end
+
+-- Front or back flip: an aerial dodge. Local physics for responsiveness, i-frames from the server.
+function CombatController.Flip()
+	local hum, root = characterParts()
+	if not hum or not root or (player:GetAttribute("Stamina") or 0) <= 0 then
+		return
+	end
+	local md = hum.MoveDirection
+	local look = root.CFrame.LookVector
+	local dir = Movement.flipDirection(md.X, md.Z, look.X, look.Z)
+	lastDodge = os.clock()
+	lockUntil = os.clock() + GameConfig.Combat.FlipLock
+	combo = 0
+	send({ Kind = "Flip", Dir = dir })
+	AnimationController.PlayLocal({ Anim = "Flip", Dir = dir })
+	local flat = Vector3.new(look.X, 0, look.Z)
+	flat = if flat.Magnitude > 0.01 then flat.Unit else Vector3.new(0, 0, -1)
+	if dir == "Back" then
+		flat = -flat
+	end
+	local duration = 0.5
+	local v = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(v.X, GameConfig.Combat.FlipHeight, v.Z)
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = 1e6
+	lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	lv.PrimaryTangentAxis = Vector3.new(1, 0, 0)
+	lv.SecondaryTangentAxis = Vector3.new(0, 0, 1)
+	lv.PlaneVelocity = Vector2.new(flat.X, flat.Z) * (GameConfig.Combat.FlipDistance / duration)
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.Parent = root
+	Debris:AddItem(att, duration + 0.1)
+	Debris:AddItem(lv, duration)
+	player:SetAttribute("Dodging", true)
+	AudioController.Play("Dodge")
+	airPuff(root, Color3.fromRGB(220, 215, 235))
+	task.delay(duration, function()
+		player:SetAttribute("Dodging", false)
+	end)
+end
+
+local function doubleJump()
+	local hum, root = characterParts()
+	if not hum or not root then
+		return
+	end
+	local v = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(v.X, GameConfig.Combat.DoubleJumpPower, v.Z)
+	AnimationController.PlayLocal({ Anim = "DoubleJump" })
+	airPuff(root, Color3.fromRGB(235, 230, 220))
+	AudioController.Play("Dodge")
+end
+
+local function watchCharacter(char: Model)
+	move = Movement.new()
+	local hum = char:WaitForChild("Humanoid", 10)
+	if not hum or not hum:IsA("Humanoid") then
+		return
+	end
+	hum.StateChanged:Connect(function(_, new)
+		if new == Enum.HumanoidStateType.Jumping or new == Enum.HumanoidStateType.Freefall then
+			Movement.tookOff(move, os.clock())
+		elseif new == Enum.HumanoidStateType.Landed or new == Enum.HumanoidStateType.Running
+			or new == Enum.HumanoidStateType.Swimming or new == Enum.HumanoidStateType.Climbing then
+			Movement.landed(move)
+		end
+	end)
+end
+
+function CombatController.OnJumpRequest()
+	local p = ClientState.Profile
+	if not p or p.Class == "" or player:GetAttribute("Health") == 0 then
+		return
+	end
+	local result = Movement.jumpRequest(move, os.clock())
+	if result == "Flip" then
+		CombatController.Flip()
+	elseif result == "DoubleJump" then
+		doubleJump()
+	end
+end
+
+function CombatController.StartMovement()
+	if player.Character then
+		task.spawn(watchCharacter, player.Character)
+	end
+	player.CharacterAdded:Connect(watchCharacter)
+	UserInputService.JumpRequest:Connect(CombatController.OnJumpRequest)
 end
 
 -- Server says we were staggered: drop local locks/charge

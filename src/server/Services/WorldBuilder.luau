@@ -120,19 +120,21 @@ local function buildLighting()
 	-- NOTE: Lighting.Technology cannot be set by scripts (Roblox-only security); it is set in
 	-- default.project.json instead.
 	local atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.28
-	atmo.Offset = 0.15
-	atmo.Color = Color3.fromRGB(200, 195, 200)
-	atmo.Decay = Color3.fromRGB(90, 70, 80)
-	atmo.Glare = 0.2
-	atmo.Haze = 1.2
+	-- night sky: low haze keeps the stars and moon visible; strong cool ambient (project file +
+	-- per-region values in EffectsController) keeps the ground and every enemy readable
+	atmo.Density = 0.24
+	atmo.Offset = 0.1
+	atmo.Color = Color3.fromRGB(70, 82, 115)
+	atmo.Decay = Color3.fromRGB(40, 44, 70)
+	atmo.Glare = 0
+	atmo.Haze = 0.4
 	atmo.Parent = Lighting
 	local cc = Instance.new("ColorCorrectionEffect")
 	cc.Name = "Grade"
-	cc.Brightness = 0.04
-	cc.Contrast = 0.08
-	cc.Saturation = -0.1
-	cc.TintColor = Color3.fromRGB(240, 232, 225)
+	cc.Brightness = 0.06
+	cc.Contrast = 0.1
+	cc.Saturation = -0.05
+	cc.TintColor = Color3.fromRGB(228, 234, 255) -- cool moonlit grade
 	cc.Parent = Lighting
 	local bloom = Instance.new("BloomEffect")
 	bloom.Intensity = 0.7
@@ -157,15 +159,15 @@ local function buildLighting()
 	dof.Parent = Lighting
 	local sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
 	sky.SunAngularSize = 12
-	sky.MoonAngularSize = 9
-	sky.StarCount = 3000
+	sky.MoonAngularSize = 16
+	sky.StarCount = 5000
 	sky.Parent = Lighting
 	-- volumetric clouds and nicer water
 	local terrain = workspace.Terrain
 	local clouds = terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
-	clouds.Cover = 0.55
-	clouds.Density = 0.45
-	clouds.Color = Color3.fromRGB(235, 230, 235)
+	clouds.Cover = 0.35
+	clouds.Density = 0.35
+	clouds.Color = Color3.fromRGB(125, 132, 160)
 	clouds.Parent = terrain
 	terrain.WaterColor = Color3.fromRGB(40, 70, 75)
 	terrain.WaterReflectance = 0.6

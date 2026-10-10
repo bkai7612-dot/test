@@ -55,16 +55,38 @@ local WeaponTypes = {
 		StaminaMult = 0.8, Guard = 0.1, CritBonus = 0.2,
 	},
 	Staff = {
+		-- Spells cost mana per combo step. When mana is too low the staff is swung as a
+		-- quarterstaff instead (Fallback), and those strikes siphon mana back.
 		Ranged = true, Catalyst = true, ProjectileSpeed = 95, ProjectileRadius = 1.8, MaxRange = 120,
-		Light = { Windup = 0.32, Recovery = 0.38, Motion = { 1.0 }, Poise = 8, Mana = 6 },
-		Heavy = { Windup = 0.8, Recovery = 0.6, Motion = 2.0, Poise = 24, Mana = 16 },
+		Light = { Windup = 0.32, Recovery = 0.38, Motion = { 1.0, 0.65, 1.5 }, Poise = 8, Mana = { 6, 8, 12 },
+			Spells = {
+				{ Name = "Arcane Bolt" },
+				{ Name = "Twin Bolts", Shots = 2, Spread = 12 },
+				{ Name = "Arcane Burst", Size = 1.6, Speed = 0.8, Pierce = true },
+			} },
+		Heavy = { Windup = 0.8, Recovery = 0.6, Motion = 2.0, Poise = 24, Mana = 16, Spell = { Name = "Charged Orb", Size = 1.4, Pierce = true } },
+		Fallback = {
+			Range = 7.5, Arc = 110, DamageType = "Physical", ManaOnHit = 3, AnimType = "Spear",
+			Light = { Windup = 0.22, Recovery = 0.34, Motion = { 0.7, 0.75, 0.95 }, Poise = 12, Names = { "Staff Jab", "Staff Sweep", "Overhead Crack" } },
+			Heavy = { Windup = 0.55, Recovery = 0.6, Motion = 1.15, Poise = 30, Range = 8.5, Arc = 360, Name = "Spinning Sweep" },
+		},
 		StaminaMult = 0.6, Guard = 0.15, CritBonus = 0,
 	},
 	Seal = {
-		-- Faith catalyst: short-ranged holy burst instead of a projectile
+		-- Faith catalyst: short-ranged holy bursts. Out of mana it is used to bash (Fallback).
 		Range = 10, Arc = 70, Catalyst = true,
-		Light = { Windup = 0.3, Recovery = 0.38, Motion = { 1.0 }, Poise = 12, Mana = 5 },
-		Heavy = { Windup = 0.75, Recovery = 0.6, Motion = 1.9, Poise = 30, Mana = 14 },
+		Light = { Windup = 0.3, Recovery = 0.38, Motion = { 1.0, 1.0, 1.35 }, Poise = 12, Mana = { 5, 5, 9 },
+			Spells = {
+				{ Name = "Holy Burst" },
+				{ Name = "Holy Burst" },
+				{ Name = "Radiant Column", Range = 14, Arc = 50 },
+			} },
+		Heavy = { Windup = 0.75, Recovery = 0.6, Motion = 1.9, Poise = 30, Mana = 14, Spell = { Name = "Sacred Nova", Range = 11, Arc = 360 } },
+		Fallback = {
+			Range = 6, Arc = 90, DamageType = "Physical", ManaOnHit = 3, AnimType = "Punch",
+			Light = { Windup = 0.18, Recovery = 0.3, Motion = { 0.65, 0.75 }, Poise = 10, Names = { "Seal Bash", "Backhand" } },
+			Heavy = { Windup = 0.5, Recovery = 0.55, Motion = 1.1, Poise = 28, Name = "Consecrated Slam", Range = 7, Arc = 140 },
+		},
 		StaminaMult = 0.6, Guard = 0.15, CritBonus = 0,
 	},
 	Fist = {

@@ -106,3 +106,17 @@ See `docs/CHECKLIST.md` → *Manual Studio playtests still required*. Pay partic
   - Bloom tuned so neon glows.
 - **NOT verified in Studio:**
   - In-engine look, wedge orientation on spikes, and server performance with ~60–170 parts per boss.
+
+## Update: catalyst move sets, double jump, flips and night lighting
+
+- **Staff and seal:** three spells per light combo plus a heavy spell, each with its own mana cost. When you can't afford the next spell, the catalyst uses mana-free physical strikes, and each strike that lands restores 3 mana.
+- **Movement:** a double jump. Double jump then dodge gives a fresh flip; dodge then jump gives a chained flip. Both are front or back flips depending on input, and both give dodge i-frames.
+- **Night:** ClockTime 0.4, with a starry sky and a large moon. A strong cool ambient and per-region exposure keep the world readable, and the hub stays the brightest area.
+- **Verified offline:**
+  - 150 unit tests, including 17 new ones in `Catalyst.spec` and `Movement.spec`.
+  - 38 integration checks (`tools/run_integration.sh`) that run the real client and server controllers. Three deliberately injected bugs were each caught.
+  - Type check and API-permission check are clean.
+- **NOT verified in Studio:**
+  - How the flip looks and feels: rotating the root joint mid-air, and the jump heights.
+  - How bright the night lighting is on real displays.
+  - Animator interaction with Roblox's own jump animation.
